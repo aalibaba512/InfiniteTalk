@@ -1,0 +1,7 @@
+# Toolkit: locally-fetched external repos (managed by tools/toolkit.py)
+.toolkit/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
