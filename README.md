@@ -380,6 +380,11 @@ If you find our work useful in your research, please consider citing:
 }
 ```
 
+## 🧰 Project Toolkit
+Curated external repos for video editing, design, strategy & data scraping are registered in
+[`toolkit.repos.toml`](toolkit.repos.toml) (catalog: [`TOOLKIT.md`](TOOLKIT.md)).
+Fetch on demand with `python3 tools/toolkit.py clone core` — see [`AGENTS.md`](AGENTS.md).
+
 ## 📜 License
 The models in this repository are licensed under the Apache 2.0 License. We claim no rights over the your generated contents, 
 granting you the freedom to use them while ensuring that your usage complies with the provisions of this license. 

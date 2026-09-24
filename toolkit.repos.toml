@@ -1,0 +1,536 @@
+# ============================================================================
+# Project Toolkit — External Repository Registry (machine-readable)
+# ============================================================================
+# Human-readable catalog: TOOLKIT.md
+# Fetch any of these on demand:   python3 tools/toolkit.py clone <name|tag|category|all>
+# List what's available:          python3 tools/toolkit.py list
+#
+# - Repos are cloned SHALLOW into .toolkit/<category>/<name>/ (gitignored — never commit them).
+# - tags: "core" = default starter set; free-form role tags after that.
+# - Verify licenses before commercial use (AGPL items noted — network-service caveat).
+# ============================================================================
+
+[meta]
+updated = "2026-09-23"
+source_doc = "TOOLKIT.md"
+clone_dir = ".toolkit"
+
+# ---------------------------------------------------------------- video (22)
+
+[[repo]]
+name = "ffmpeg"
+category = "video"
+url = "https://github.com/FFmpeg/FFmpeg"
+tags = ["core", "cli", "encoding"]
+use = "The backbone: record, convert, stream, filter any audio/video. Use for every encode/transcode/probe task."
+license = "GPL-2.0+ / LGPL-2.1+"
+
+[[repo]]
+name = "lossless-cut"
+category = "video"
+url = "https://github.com/mifi/lossless-cut"
+tags = ["core", "gui", "trimming"]
+use = "Lossless trim/cut/join without re-encoding. Fast quality-preserving edits."
+license = "GPL-2.0"
+
+[[repo]]
+name = "moviepy"
+category = "video"
+url = "https://github.com/Zulko/moviepy"
+tags = ["core", "python", "automation"]
+use = "Scriptable video editing in Python — cuts, compositing, text/subtitles. Glue for automated pipelines."
+license = "MIT"
+
+[[repo]]
+name = "shotcut"
+category = "video"
+url = "https://github.com/mltframework/shotcut"
+tags = ["gui", "editor"]
+use = "Most-starred actively maintained open-source NLE; cross-platform, 4K."
+license = "GPL-3.0"
+
+[[repo]]
+name = "kdenlive"
+category = "video"
+url = "https://github.com/KDE/kdenlive"
+tags = ["gui", "editor"]
+use = "Premiere-Pro-style workflow; proxy editing, VST audio, multi-track."
+license = "GPL-3.0"
+
+[[repo]]
+name = "olive"
+category = "video"
+url = "https://github.com/olive-editor/olive"
+tags = ["gui", "editor"]
+use = "Modern non-linear editor with a clean node-based approach."
+license = "GPL-3.0"
+
+[[repo]]
+name = "openshot-qt"
+category = "video"
+url = "https://github.com/OpenShot/openshot-qt"
+tags = ["gui", "editor", "beginner"]
+use = "Easiest entry-point editor; drag-and-drop, 400+ transitions."
+license = "GPL-3.0"
+
+[[repo]]
+name = "cap"
+category = "video"
+url = "https://github.com/CapSoftware/Cap"
+tags = ["gui", "screen-recording"]
+use = "Open-source CapCut/Loom alternative: screen capture + video editing."
+license = "AGPL-3.0 (network-service caveat)"
+
+[[repo]]
+name = "opencut"
+category = "video"
+url = "https://github.com/OpenCut-app/OpenCut"
+tags = ["gui", "editor", "web"]
+use = "Open-source CapCut alternative for web/desktop."
+license = "AGPL-3.0 (network-service caveat)"
+
+[[repo]]
+name = "remotion"
+category = "video"
+url = "https://github.com/remotion-dev/remotion"
+tags = ["react", "programmatic", "templates"]
+use = "Make videos in React — ideal for templated social content generated from data."
+license = "Source-available (company license; free for individuals/small teams)"
+
+[[repo]]
+name = "editly"
+category = "video"
+url = "https://github.com/mifi/editly"
+tags = ["cli", "declarative"]
+use = "Declarative CLI video editing + API — build edits from a spec file."
+license = "MIT"
+
+[[repo]]
+name = "auto-editor"
+category = "video"
+url = "https://github.com/WyattBlue/auto-editor"
+tags = ["cli", "automation"]
+use = "Automatically removes silence/dead footage — rough-cut long recordings instantly."
+license = "Unlicense/Public-domain style (check repo)"
+
+[[repo]]
+name = "pyscenedetect"
+category = "video"
+url = "https://github.com/Breakthrough/PySceneDetect"
+tags = ["python", "analysis"]
+use = "Scene-change detection — feed highlights into auto-clipping workflows."
+license = "BSD-3-Clause"
+
+[[repo]]
+name = "handbrake"
+category = "video"
+url = "https://github.com/HandBrake/HandBrake"
+tags = ["gui", "transcoding"]
+use = "Batch transcoding with sensible device/web presets."
+license = "GPL-2.0"
+
+[[repo]]
+name = "backgroundremover"
+category = "video"
+url = "https://github.com/nadermx/backgroundremover"
+tags = ["cli", "ai"]
+use = "AI background removal from images AND video via one command."
+license = "MIT"
+
+[[repo]]
+name = "obs-studio"
+category = "video"
+url = "https://github.com/obsproject/obs-studio"
+tags = ["capture", "streaming"]
+use = "Recording + live-streaming standard."
+license = "GPL-2.0"
+
+[[repo]]
+name = "blender"
+category = "video"
+url = "https://github.com/blender/blender"
+tags = ["3d", "vfx", "compositing"]
+use = "Compositing, VFX, motion tracking, 3D titles, plus built-in video sequencer."
+license = "GPL-3.0"
+
+[[repo]]
+name = "liveportrait"
+category = "video"
+url = "https://github.com/KlingAIResearch/LivePortrait"
+tags = ["ai", "talking-head", "synergy-with-infinitetalk"]
+use = "Portrait animation — strong synergy with InfiniteTalk talking-head work."
+license = "Apache-2.0 / custom (check repo)"
+
+[[repo]]
+name = "autoclip"
+category = "video"
+url = "https://github.com/zhouxiaoka/autoclip"
+tags = ["ai", "highlights"]
+use = "AI highlight extraction & clipping from long videos (shorts/reps)."
+license = "Check repo"
+
+[[repo]]
+name = "opencreator"
+category = "video"
+url = "https://github.com/krillinai/OpenCreator"
+tags = ["ai", "all-in-one"]
+use = "All-in-one AI creator workspace: video, voice, avatars, translation, dubbing."
+license = "Check repo"
+
+[[repo]]
+name = "awesome-video-production"
+category = "video"
+url = "https://github.com/ad-si/awesome-video-production"
+tags = ["awesome", "meta"]
+use = "Curated master list of video software/services — overflow directory."
+license = "List"
+
+[[repo]]
+name = "awesome-video"
+category = "video"
+url = "https://github.com/sitkevij/awesome-video"
+tags = ["awesome", "meta"]
+use = "Curated list of video frameworks, libraries, specs — overflow directory."
+license = "List"
+
+# --------------------------------------------------------------- design (12)
+
+[[repo]]
+name = "penpot"
+category = "design"
+url = "https://github.com/penpot/penpot"
+tags = ["core", "ui-ux", "self-hosted"]
+use = "Open-source Figma alternative — team design + prototyping, self-hostable."
+license = "MPL-2.0"
+
+[[repo]]
+name = "excalidraw"
+category = "design"
+url = "https://github.com/excalidraw/excalidraw"
+tags = ["core", "whiteboard", "mockups"]
+use = "Hand-drawn-style whiteboarding, diagrams, quick wireframes."
+license = "MIT"
+
+[[repo]]
+name = "tldraw"
+category = "design"
+url = "https://github.com/tldraw/tldraw"
+tags = ["sdk", "canvas", "embed"]
+use = "Infinite-canvas SDK — embed collaborative whiteboards in our own apps."
+license = "Custom source-available"
+
+[[repo]]
+name = "gimp"
+category = "design"
+url = "https://github.com/GNOME/gimp"
+tags = ["raster", "editor"]
+use = "Photoshop-class raster image editing."
+license = "GPL-3.0"
+
+[[repo]]
+name = "inkscape"
+category = "design"
+url = "https://github.com/inkscape/inkscape"
+tags = ["vector", "svg"]
+use = "Vector graphics / logo / SVG editing."
+license = "GPL-3.0 / GPL-2.0+"
+
+[[repo]]
+name = "krita"
+category = "design"
+url = "https://github.com/KDE/krita"
+tags = ["painting", "illustration"]
+use = "Digital painting & illustration."
+license = "GPL-3.0"
+
+[[repo]]
+name = "darktable"
+category = "design"
+url = "https://github.com/darktable-org/darktable"
+tags = ["photo", "raw"]
+use = "Photography workflow + raw processing."
+license = "GPL-3.0"
+
+[[repo]]
+name = "ui-shadcn"
+category = "design"
+url = "https://github.com/shadcn-ui/ui"
+tags = ["ui-kit", "react", "tailwind"]
+use = "De-facto standard component collection for React/Tailwind app UIs."
+license = "MIT"
+
+[[repo]]
+name = "storybook"
+category = "design"
+url = "https://github.com/storybookjs/storybook"
+tags = ["ui-kit", "documentation"]
+use = "Build & document UI components in isolation."
+license = "MIT"
+
+[[repo]]
+name = "bulma"
+category = "design"
+url = "https://github.com/jgthms/bulma"
+tags = ["css", "framework"]
+use = "Modern CSS framework, no JS required — quick marketing-site styling."
+license = "MIT"
+
+[[repo]]
+name = "awesome-design-tools"
+category = "design"
+url = "https://github.com/goabstract/Awesome-Design-Tools"
+tags = ["awesome", "meta"]
+use = "Best design tools & plugins for everything — overflow directory."
+license = "List"
+
+[[repo]]
+name = "design-resources-for-developers"
+category = "design"
+url = "https://github.com/bradtraversy/design-resources-for-developers"
+tags = ["awesome", "meta"]
+use = "Huge curated list: stock photos, templates, UI libs, fonts, icons."
+license = "List"
+
+# ------------------------------------------------------------- strategy (15)
+
+[[repo]]
+name = "postiz"
+category = "strategy"
+url = "https://github.com/gitroomhq/postiz-app"
+tags = ["core", "social-media", "scheduling", "ai"]
+use = "Open-source Buffer/Hootsuite alternative — schedule to 30+ networks with built-in AI content. The publishing hub for our media strategy."
+license = "AGPL-3.0 (network-service caveat)"
+
+[[repo]]
+name = "mautic"
+category = "strategy"
+url = "https://github.com/mautic/mautic"
+tags = ["core", "marketing-automation", "email"]
+use = "World's largest open-source marketing automation platform — campaigns, segmentation, email."
+license = "GPL-3.0"
+
+[[repo]]
+name = "plausible"
+category = "strategy"
+url = "https://github.com/plausible/analytics"
+tags = ["core", "analytics", "privacy"]
+use = "Privacy-first web analytics, self-hosted — the 'measure' half of publish→measure→automate."
+license = "AGPL-3.0 (network-service caveat)"
+
+[[repo]]
+name = "socioboard"
+category = "strategy"
+url = "https://github.com/socioboard/Socioboard-5.0"
+tags = ["social-media", "analytics"]
+use = "Open-source social media management, analytics & reporting platform (9 networks)."
+license = "MIT (check repo)"
+
+[[repo]]
+name = "ghost"
+category = "strategy"
+url = "https://github.com/TryGhost/Ghost"
+tags = ["publishing", "newsletter"]
+use = "The standard open-source publishing/newsletter platform for content strategy."
+license = "MIT"
+
+[[repo]]
+name = "listmonk"
+category = "strategy"
+url = "https://github.com/knadh/listmonk"
+tags = ["newsletter", "email"]
+use = "High-performance self-hosted newsletter + mailing-list manager."
+license = "AGPL-3.0 (network-service caveat)"
+
+[[repo]]
+name = "twenty"
+category = "strategy"
+url = "https://github.com/twentyhq/twenty"
+tags = ["crm", "sales"]
+use = "Open-source Salesforce-alternative CRM, AI-ready."
+license = "AGPL-3.0 (network-service caveat)"
+
+[[repo]]
+name = "matomo"
+category = "strategy"
+url = "https://github.com/matomo-org/matomo"
+tags = ["analytics", "privacy"]
+use = "Full-featured Google Analytics alternative with complete data control."
+license = "GPL-3.0"
+
+[[repo]]
+name = "umami"
+category = "strategy"
+url = "https://github.com/umami-software/umami"
+tags = ["analytics", "lightweight"]
+use = "Lightweight, privacy-focused web analytics — easiest analytics to stand up."
+license = "MIT"
+
+[[repo]]
+name = "n8n"
+category = "strategy"
+url = "https://github.com/n8n-io/n8n"
+tags = ["automation", "workflows", "glue"]
+use = "Workflow automation — glue the whole marketing/data pipeline together (400+ integrations)."
+license = "Sustainable Use License (source-available; free to self-host)"
+
+[[repo]]
+name = "latticework"
+category = "strategy"
+url = "https://github.com/l4ci/latticework"
+tags = ["frameworks", "ai-skills"]
+use = "50+ strategy frameworks (SWOT, Porter's Five Forces, OKR, Cynefin) packaged as AI-agent skills."
+license = "Check repo"
+
+[[repo]]
+name = "marketingskills"
+category = "strategy"
+url = "https://github.com/coreyhaines31/marketingskills"
+tags = ["frameworks", "ai-skills", "growth"]
+use = "Marketing skills for AI agents: CRO, copywriting, SEO, analytics, growth engineering."
+license = "Check repo"
+
+[[repo]]
+name = "awesome-marketing"
+category = "strategy"
+url = "https://github.com/ronakganatra/awesome-marketing"
+tags = ["awesome", "meta"]
+use = "Hand-picked strategy & growth resources (PLG, funnels, metrics, org design)."
+license = "List"
+
+[[repo]]
+name = "awesome-marketing-tools"
+category = "strategy"
+url = "https://github.com/tractiongroup/awesome-marketing-tools"
+tags = ["awesome", "meta"]
+use = "Curated ads/SEO/email/CRO/influencer tool lists."
+license = "List"
+
+[[repo]]
+name = "awesome-content-marketing"
+category = "strategy"
+url = "https://github.com/awesomelistsio/awesome-content-marketing"
+tags = ["awesome", "meta"]
+use = "Content strategy, distribution & optimization resources."
+license = "CC0"
+
+# ------------------------------------------------------------- scraping (15)
+
+[[repo]]
+name = "firecrawl"
+category = "scraping"
+url = "https://github.com/firecrawl/firecrawl"
+tags = ["core", "ai", "llm-ready"]
+use = "#1 AI-era scraper — turns websites into LLM-ready markdown; search/scrape/crawl at scale."
+license = "AGPL-3.0 (network-service caveat)"
+
+[[repo]]
+name = "scrapy"
+category = "scraping"
+url = "https://github.com/scrapy/scrapy"
+tags = ["core", "python", "production"]
+use = "Battle-tested production Python crawling framework — large structured crawls."
+license = "BSD-3-Clause"
+
+[[repo]]
+name = "crawl4ai"
+category = "scraping"
+url = "https://github.com/unclecode/crawl4ai"
+tags = ["core", "ai", "llm-ready"]
+use = "LLM-friendly crawler built for RAG pipelines."
+license = "Apache-2.0 (with attribution clause — check repo)"
+
+[[repo]]
+name = "scrapling"
+category = "scraping"
+url = "https://github.com/D4Vinci/Scrapling"
+tags = ["python", "stealth", "adaptive"]
+use = "Adaptive stealth scraping framework — auto-heals selectors when pages change."
+license = "BSD-3-Clause"
+
+[[repo]]
+name = "crawlee"
+category = "scraping"
+url = "https://github.com/apify/crawlee"
+tags = ["node", "typescript"]
+use = "Best all-in-one Node.js/TS scraping framework (browser + HTTP)."
+license = "Apache-2.0"
+
+[[repo]]
+name = "colly"
+category = "scraping"
+url = "https://github.com/gocolly/colly"
+tags = ["go"]
+use = "Fast & elegant Go scraper for high-performance static scraping."
+license = "Apache-2.0"
+
+[[repo]]
+name = "katana"
+category = "scraping"
+url = "https://github.com/projectdiscovery/katana"
+tags = ["go", "recon", "crawler"]
+use = "Go crawler for URL discovery / security recon."
+license = "MIT"
+
+[[repo]]
+name = "playwright"
+category = "scraping"
+url = "https://github.com/microsoft/playwright"
+tags = ["core", "browser", "automation"]
+use = "Microsoft's cross-browser automation — default for JS-heavy sites."
+license = "Apache-2.0"
+
+[[repo]]
+name = "puppeteer"
+category = "scraping"
+url = "https://github.com/puppeteer/puppeteer"
+tags = ["browser", "automation"]
+use = "Chrome-first browser automation."
+license = "Apache-2.0"
+
+[[repo]]
+name = "camoufox"
+category = "scraping"
+url = "https://github.com/daijro/camoufox"
+tags = ["browser", "anti-detect"]
+use = "Anti-detect Firefox — for fingerprint-heavy targets."
+license = "MPL-2.0"
+
+[[repo]]
+name = "browser-use"
+category = "scraping"
+url = "https://github.com/browser-use/browser-use"
+tags = ["ai", "agent", "browser"]
+use = "Let AI agents drive the browser — scraping + interaction in natural language."
+license = "MIT"
+
+[[repo]]
+name = "maxun"
+category = "scraping"
+url = "https://github.com/maxun-dev/maxun"
+tags = ["no-code", "self-hosted"]
+use = "No-code, self-hosted 'robots' that scrape like a human — for non-coders on the team."
+license = "AGPL-3.0 (network-service caveat)"
+
+[[repo]]
+name = "mediacrawler"
+category = "scraping"
+url = "https://github.com/NanmiCoder/MediaCrawler"
+tags = ["social-media", "research"]
+use = "Social-media data collection (XHS/Douyin/Kuaishou/Bilibili/Weibo/Tieba) — digital-media research."
+license = "Non-commercial education clause — check repo before ANY use"
+
+[[repo]]
+name = "google-maps-scraper"
+category = "scraping"
+url = "https://github.com/gosom/google-maps-scraper"
+tags = ["leads", "vertical"]
+use = "Local-business & POI lead scraping with geo-targeting."
+license = "MIT"
+
+[[repo]]
+name = "awesome-web-scraping"
+category = "scraping"
+url = "https://github.com/lorien/awesome-web-scraping"
+tags = ["awesome", "meta"]
+use = "Master list of scraping libs/services per language — overflow directory."
+license = "List"
