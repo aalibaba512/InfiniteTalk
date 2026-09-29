@@ -66,10 +66,32 @@ def font(path, size):
         return ImageFont.load_default()
 
 
+def load_caption_map(path):
+    """
+    Optional JSON overrides: {"8": "", "3": "Distemper, 1000 sqm"}.
+
+    Keys are page numbers; "index:N" keys address the Nth pair instead. An
+    empty string means "show no caption for this one", which is how a page of
+    promo text gets silenced without touching the extractor.
+    """
+    if not path:
+        return {}
+    with open(path) as fh:
+        raw = json.load(fh)
+    out = {}
+    for k, v in raw.items():
+        out[str(k).strip()] = " ".join(str(v).split())
+    return out
+
+
 def effective_caption(pair, args):
     """The caption that will actually be shown for a pair."""
     if getattr(args, "no_captions", False):
         return ""
+    cmap = getattr(args, "caption_map", None) or {}
+    for key in (f"index:{pair.index}", str(pair.page)):
+        if key in cmap:
+            return cmap[key]
     if getattr(args, "caption", None) is not None:
         return args.caption
     return pair.caption
@@ -290,7 +312,14 @@ class Pair:
     split_x: int = 0
     caption: str = ""
     page_bbox: tuple = ()
+    labelled: bool = False
 
+
+# "Before" / "After" printed on the slide are labels, not captions, and they
+# double as proof that a pair really is a before/after pair.
+BEFORE_LABEL = re.compile(r"^before\b", re.IGNORECASE)
+AFTER_LABEL = re.compile(r"^after\b", re.IGNORECASE)
+LABEL_ONLY = re.compile(r"^(before|after)\s*[:.\-\u2013\u2014]*\s*$", re.IGNORECASE)
 
 CAPTION_JUNK = re.compile(
     r"\s*[:\-\u2013\u2014|]?\s*(before\s*(?:\||&|and|/|vs\.?)\s*after)\s*[:\-\u2013\u2014|]?\s*$",
@@ -311,19 +340,115 @@ def clean_caption(text):
     return t
 
 
-def text_blocks(page):
-    """Text blocks on the page as (x0, y0, x1, y1, text)."""
+def page_lines(page):
+    """
+    Text lines on the page as (x0, y0, x1, y1, text).
+
+    Lines, not blocks: a PDF can merge 'Before' and 'After' into one block when
+    they sit at the same height, and a block-level bbox would then span both
+    columns and match neither photo. Each line keeps its own tight box.
+    """
     out = []
     try:
-        blocks = page.get_text("blocks")
+        d = page.get_text("dict")
     except Exception:
         return out
-    for b in blocks:
-        if len(b) >= 5 and (len(b) < 7 or b[6] == 0):     # 0 == text
-            txt = clean_caption(str(b[4]))
-            if txt:
-                out.append((b[0], b[1], b[2], b[3], txt))
+    for blk in d.get("blocks", []):
+        if blk.get("type", 0) != 0:
+            continue
+        for line in blk.get("lines", []):
+            spans = line.get("spans", [])
+            txt = " ".join("".join(sp.get("text", "") for sp in spans).split())
+            if not txt:
+                continue
+            x0, y0, x1, y1 = line.get("bbox", (0, 0, 0, 0))
+            size = max((sp.get("size", 0.0) for sp in spans), default=0.0)
+            out.append((x0, y0, x1, y1, txt, size))
     return out
+
+
+def document_boilerplate(doc, pages=None):
+    """
+    Text that repeats across the document: running headers, logos, footers.
+
+    A slide template prints the same lines on every page, so repeated text is
+    furniture rather than a caption of any particular pair.
+    """
+    seen = {}
+    n = 0
+    for pno, page in enumerate(doc, start=1):
+        if pages and pno not in pages:
+            continue
+        n += 1
+        for txt in {t.lower() for *_x, t, _s in page_lines(page)}:
+            seen[txt] = seen.get(txt, 0) + 1
+    if n < 3:
+        return set()
+    floor = max(2, int(round(0.40 * n)))
+    return {t for t, c in seen.items() if c >= floor}
+
+
+def text_blocks(page, boilerplate=()):
+    """
+    Caption candidates: text lines that are neither Before/After labels nor
+    repeated page furniture. Each carries its font size for ranking.
+    """
+    out = []
+    for x0, y0, x1, y1, txt, size in page_lines(page):
+        if LABEL_ONLY.match(txt):
+            continue                                          # a label, not a caption
+        if txt.lower() in boilerplate:
+            continue                                          # running header/footer
+        cleaned = clean_caption(txt)
+        if cleaned:
+            out.append((x0, y0, x1, y1, cleaned, size))
+    return out
+
+
+def _same_row(boxes, px_box):
+    """Does a pair of photo boxes correspond to this row bbox?"""
+    x0, y0, x1, y1 = px_box
+    ys = [b[1] for b in boxes] + [b[3] for b in boxes]
+    return abs(min(ys) - y0) <= 6 and abs(max(ys) - y1) <= 6
+
+
+def labels_on_page(page):
+    """Text lines that are just 'Before' or 'After' labels, with tight boxes."""
+    out = []
+    for x0, y0, x1, y1, txt, _size in page_lines(page):
+        if LABEL_ONLY.match(txt):
+            out.append((x0, y0, x1, y1, "before" if BEFORE_LABEL.match(txt) else "after"))
+    return out
+
+
+def label_for_photo(labels, x0, y0, x1, y1, page_h):
+    """
+    The Before/After label belonging to one photo, or None.
+
+    A label counts if it horizontally overlaps the photo and sits just above or
+    just below it, so the left photo's label is never attributed to the right.
+    """
+    gap = max(55.0, 0.14 * page_h)
+    cx = (x0 + x1) / 2
+    best, best_d = None, None
+    for lx0, ly0, lx1, ly1, kind in labels:
+        if min(lx1, x1) - max(lx0, x0) <= 0.25 * min(lx1 - lx0, x1 - x0):
+            continue                                  # not under/over this photo
+        if ly1 <= y0:
+            d = y0 - ly1
+        elif ly0 >= y1:
+            d = ly0 - y1
+        else:
+            d = 0.0                                   # overlapping the photo
+        if d > gap:
+            continue
+        # a label closer to the middle of the row belongs to neither photo
+        lcx = (lx0 + lx1) / 2
+        if abs(lcx - cx) > 0.45 * (x1 - x0):
+            continue
+        if best_d is None or d < best_d:
+            best, best_d = kind, d
+    return best
 
 
 def caption_for_row(blocks, bbox, page_h, used):
@@ -334,7 +459,7 @@ def caption_for_row(blocks, bbox, page_h, used):
     caption belonging to another column is never borrowed.
     """
     x0, y0, x1, y1 = bbox
-    gap = max(24.0, 0.055 * page_h)
+    gap = max(60.0, 0.18 * page_h)
 
     def overlaps(b):
         return min(b[2], x1) - max(b[0], x0) > 0.25 * min(b[2] - b[0], x1 - x0)
@@ -343,19 +468,21 @@ def caption_for_row(blocks, bbox, page_h, used):
     for b in blocks:
         if id(b) in used or not overlaps(b):
             continue
-        # prefer a caption sitting horizontally centred over the pair, so a
-        # small label in the far corner never beats the real caption
-        bcx, pcx = (b[0] + b[2]) / 2, (x0 + x1) / 2
-        half = max(1.0, (x1 - x0) / 2)
-        centrality = max(0.0, 1.0 - abs(bcx - pcx) / half)
-        if b[3] <= y0 and (y0 - b[3]) <= gap:             # above the row
-            cands.append((y0 - b[3], centrality, b))
-        elif b[1] >= y1 and (b[1] - y1) <= gap:           # below the row
-            cands.append(((b[1] - y1) * 1.15, centrality, b))   # slight bias upward
+        if b[3] <= y0:
+            dist = y0 - b[3]                              # above the row
+        elif b[1] >= y1:
+            dist = (b[1] - y1) * 1.15                     # below: slight bias upward
+        else:
+            dist = 0.0
+        if dist > gap:
+            continue
+        size = b[5] if len(b) > 5 else 0.0
+        cands.append((dist, size, b))
     if not cands:
         return ""
-    # nearest wins; ties (within ~12pt) broken by centrality
-    cands.sort(key=lambda c: (round(c[0] / 12.0), -round(c[1], 3)))
+    # a slide's caption is set larger than incidental labels, so size leads and
+    # distance breaks ties (rounded so near-equal distances compare equal)
+    cands.sort(key=lambda c: (-round(c[1], 1), round(c[0] / 12.0)))
     return cands[0][2][4]
 
 
@@ -388,7 +515,8 @@ def _cluster_rows(items, tol_frac=0.5):
     return rows
 
 
-def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, pages=None):
+def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, pages=None,
+                           args_only_labelled=False):
     """
     Pull one BEFORE/AFTER pair per visual row of two side-by-side images.
 
@@ -399,6 +527,7 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
     doc = pymupdf.open(pdf_path)
     pairs, notes = [], []
     want = set(pages) if pages else None
+    boilerplate = document_boilerplate(doc, want)
 
     for pno, page in enumerate(doc, start=1):
         if want and pno not in want:
@@ -418,7 +547,8 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
                 if r.width > 60 and r.height > 60:
                     items.append((r, xref))
 
-        blocks = text_blocks(page)
+        blocks = text_blocks(page, boilerplate)
+        labels = labels_on_page(page)
         used = set()
         for row in _cluster_rows(items):
             if len(row) != 2:
@@ -435,11 +565,20 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
                 notes.append(f"page {pno}: native extract failed ({e}); falling back")
                 break
             bbox = (r0.x0, min(r0.y0, r1.y0), r1.x1, max(r0.y1, r1.y1))
+            lk = label_for_photo(labels, r0.x0, r0.y0, r0.x1, r0.y1, page.rect.height)
+            rk = label_for_photo(labels, r1.x0, r1.y0, r1.x1, r1.y1, page.rect.height)
+            if (lk, rk) == ("after", "before"):        # printed the other way round
+                before, after = after, before
+                notes.append(f"page {pno}: row found swapped (After on the left), corrected")
+            labelled = (lk, rk) in (("before", "after"), ("after", "before"))
+            if args_only_labelled and not labelled:
+                continue
             cap = caption_for_row(blocks, bbox, page.rect.height, used)
             if cap:
                 used = used | {id(b) for b in blocks if b[4] == cap}
             pairs.append(_record(pairs, pno, before, after, "native-image",
-                                 inspect_dir, jpg_quality, caption=cap, page_bbox=bbox))
+                                 inspect_dir, jpg_quality, caption=cap,
+                                 page_bbox=bbox, labelled=labelled))
             produced += 1
 
         if produced:
@@ -459,25 +598,47 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
         if not found:
             notes.append(f"page {pno}: no before/after pair found, skipped")
             continue
-        blocks = text_blocks(page)
+        blocks = text_blocks(page, boilerplate)
+        labels = labels_on_page(page)
         used = set()
         scale = 72.0 / zoom
         for before, after, px_box in found:
             if before.size == 0 or after.size == 0:
                 continue
             bbox = tuple(v * scale for v in px_box)
+            lx0, ly0, lx1, ly1 = bbox
+
+            # split the row bbox back into its two halves for labelling
+            boxes = [b for b in cluster_rows(find_photo_boxes(arr))
+                     if len(b) == 2 and _same_row(b, px_box)]
+            if boxes:
+                (a0, b0, a1, b1), (c0, d0, c1, d1) = sorted(boxes[0], key=lambda t: t[0])
+                lk = label_for_photo(labels, a0*scale, b0*scale, a1*scale, b1*scale, page.rect.height)
+                rk = label_for_photo(labels, c0*scale, d0*scale, c1*scale, d1*scale, page.rect.height)
+            else:
+                mid = (lx0 + lx1) / 2
+                lk = label_for_photo(labels, lx0, ly0, mid, ly1, page.rect.height)
+                rk = label_for_photo(labels, mid, ly0, lx1, ly1, page.rect.height)
+
+            if (lk, rk) == ("after", "before"):
+                before, after = after, before
+                notes.append(f"page {pno}: row found swapped (After on the left), corrected")
+            labelled = (lk, rk) in (("before", "after"), ("after", "before"))
+            if args_only_labelled and not labelled:
+                continue
             cap = caption_for_row(blocks, bbox, page.rect.height, used)
             if cap:
                 used = used | {id(b) for b in blocks if b[4] == cap}
             pairs.append(_record(pairs, pno, before, after, "page-render",
-                                 inspect_dir, jpg_quality, caption=cap, page_bbox=bbox))
+                                 inspect_dir, jpg_quality, caption=cap,
+                                 page_bbox=bbox, labelled=labelled))
 
     doc.close()
     return pairs, notes
 
 
 def _record(pairs, page, before, after, method, inspect_dir, quality, split_x=0,
-            caption="", page_bbox=()):
+            caption="", page_bbox=(), labelled=False):
     idx = len(pairs) + 1
     before = upscale_to(before, 900)
     after = upscale_to(after, 900)
@@ -498,6 +659,7 @@ def _record(pairs, page, before, after, method, inspect_dir, quality, split_x=0,
         split_x=int(split_x),
         caption=caption,
         page_bbox=tuple(float(v) for v in page_bbox) if page_bbox else (),
+        labelled=bool(labelled),
     )
 
 
@@ -900,7 +1062,12 @@ def main():
     ap.add_argument("--no-labels", action="store_true")
     ap.add_argument("--no-knob", action="store_true", help="plain divider line, no handle")
     ap.add_argument("--caption", help="force this caption on every pair (default: read from the PDF)")
+    ap.add_argument("--caption-map", dest="caption_map_path",
+                    help='JSON of per-page caption overrides, e.g. {"8": "", "3": "Fixed caption"}')
     ap.add_argument("--no-captions", action="store_true", help="never show captions")
+    ap.add_argument("--only-labelled", action="store_true",
+                    help="keep only pairs whose slides print Before/After labels "
+                         "(use on decks that mix renovation pages with promo slides)")
 
     ap.add_argument("--hold-before", type=float, default=3.4, help="how long BEFORE sits on screen")
     ap.add_argument("--wipe-dur", type=float, default=1.7, dest="wipe_dur")
@@ -909,6 +1076,7 @@ def main():
     ap.add_argument("--audio", help="optional narration/music to mux in")
 
     args = ap.parse_args()
+    args.caption_map = load_caption_map(args.caption_map_path)
 
     pages = None
     if args.pages:
@@ -933,7 +1101,8 @@ def main():
             sys.exit(f"PDF not found: {args.pdf}")
         try:
             pairs, notes = extract_pairs_from_pdf(
-                args.pdf, dpi=args.dpi, inspect_dir=dump_dir, pages=pages
+                args.pdf, dpi=args.dpi, inspect_dir=dump_dir, pages=pages,
+                args_only_labelled=args.only_labelled,
             )
         except pymupdf.FileDataError as e:
             sys.exit(f"Could not read {args.pdf}: {e} (is it a valid PDF?)")
@@ -954,7 +1123,19 @@ def main():
         sys.exit("give me --pdf, or --before-dir with --after-dir")
 
     if not pairs:
-        sys.exit("No before/after pairs found — check the PDF layout (see --probe --inspect).")
+        print("Found 0 pairs.")
+        if args.report:
+            os.makedirs(os.path.dirname(os.path.abspath(args.report)), exist_ok=True)
+            with open(args.report, "w") as fh:
+                json.dump({"source": args.pdf, "pairs": [], "notes": notes}, fh, indent=2)
+            print("report ->", args.report)
+        for n in notes:
+            print("  note:", n)
+        sys.exit(
+            "No before/after pairs found. If the deck prints Before/After labels, "
+            "try without --only-labelled; otherwise check the PDF layout with "
+            "--probe --inspect DIR."
+        )
 
     print(f"Found {len(pairs)} pair(s):")
     for p in pairs:

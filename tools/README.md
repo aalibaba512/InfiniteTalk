@@ -31,8 +31,44 @@ column's caption is never borrowed. Trailing gloss like `before | after`,
 location or subject. Nearest wins; ties within ~12pt are broken by which block is
 centred over the pair, so a small corner label can't beat the real caption.
 
-The caption fades in and sits above the title badge. Override with
-`--caption "text"` (forces one caption everywhere) or `--no-captions`.
+The caption fades in and sits above the title badge.
+
+Three things that matter on real decks:
+
+- **Labels are not captions.** A slide that prints `Before` and `After` under the
+  two photos has those read as *labels*. They are matched to the photo they sit
+  under (by horizontal overlap plus depth), never shown as text, and their
+  presence is recorded as `labelled` in the report.
+- **Orientation is checked.** If a row is printed `After | Before`, the pair is
+  swapped back and a note is emitted. A video with the reveal backwards is the
+  worst possible failure, so it is worth the extra lookup.
+- **Page furniture is filtered.** Text repeating across ~40% of the document
+  (running headers, logos, footers) is boilerplate and never becomes a caption.
+  Among the rest, the largest type near the pair wins, so a slide's real caption
+  beats an incidental promo line.
+
+Overrides, for the last mile:
+
+```bash
+--caption "text"              # same caption on every pair
+--no-captions                 # none at all
+--caption-map overrides.json  # per page: {"8": "", "3": "Distemper, 1000 sqm"}
+```
+
+An empty string in the map silences one page; `"index:3"` addresses the 3rd pair
+instead of a page number.
+
+### Mixed decks
+
+Decks often interleave real before/after pages with promo or admissions slides
+that still have two images side by side. `--only-labelled` keeps only the rows
+whose slide actually prints `Before`/`After`, which drops the promo pages.
+Check the report's `labelled` column before relying on it.
+
+```bash
+python3 tools/beforeafter_video.py --pdf deck.pdf --probe --only-labelled --report r.json
+python3 -c "import json;[print(p['page'], p['labelled'], p['caption']) for p in json.load(open('r.json'))['pairs']]"
+```
 
 ### Usage
 
