@@ -17,6 +17,7 @@ reuse across projects.
 - **Cut / trim / encode video** → `ffmpeg` (anything), `lossless-cut` (lossless trims), `handbrake` (batch transcode)
 - **Automate edits in code** → `moviepy` (Python), `remotion` (React templating), `editly` (declarative CLI), `auto-editor` (silence removal), `pyscenedetect` (scene cuts)
 - **AI video / talking-head extras** → `liveportrait`, `autoclip`, `opencreator`, `backgroundremover`
+- **Before/after reveal video from a PDF of side-by-side pairs** → `tools/beforeafter_video.py` (see `tools/README.md`)
 - **Design assets & UI** → `penpot` (Figma alt), `excalidraw` (mockups), `gimp`/`inkscape`/`krita`, `ui-shadcn` + `bulma` (web UI)
 - **Publish & grow (digital media strategy)** → `postiz` (scheduling hub), `ghost`/`listmonk` (content/email), `plausible`/`umami`/`matomo` (analytics), `mautic` (automation), `twenty` (CRM), `n8n` (glue)
 - **Strategy frameworks with AI agents** → `latticework`, `marketingskills`
