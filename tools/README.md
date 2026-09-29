@@ -87,7 +87,7 @@ python3 tools/beforeafter_video.py --pdf deck.pdf --out out/reveal.mp4 \
 
 Key options: `--wipe lr|rl|tb|bt`, `--zoom`, `--aspect common|none`, `--pages 1,3-5`,
 `--fps`, `--crf`, `--no-labels`, `--no-knob`, `--caption`, `--no-captions`,
-`--audio narration.wav`, `--report r.json`.
+`--caption-map`, `--only-labelled`, `--source`, `--music`, `--audio`, `--report`.
 
 Timing defaults are deliberately unhurried (`--hold-before 3.4 --wipe-dur 1.7
 --hold-after 3.4`, so ~8.5s per pair) to give each transformation time to land.
@@ -99,6 +99,40 @@ which doubles as a check that the right columns were picked.
 A PDF where before and after appear **side by side**. One pair per page, or several
 stacked rows per page — both work. Works on flattened PDFs (a single embedded image
 per page) as well as ones with the original photos embedded.
+
+### Music
+
+`--music uplifting|calm` generates an original music bed with `tools/make_music.py`,
+cut to exactly the video's length, and muxes it in — one command, no asset to
+source:
+
+```bash
+python3 tools/beforeafter_video.py --pdf deck.pdf --out reveal.mp4 --music uplifting
+```
+
+Everything is synthesised from scratch with numpy — no samples, no network, no
+licence and no attribution. Useful here because the sandbox can only reach GitHub
+and PyPI, so every stock-music host is unreachable.
+
+## `make_music.py`
+
+Composes and renders the bed offline.
+
+| Mood | Feel |
+|---|---|
+| `uplifting` (default) | 76 BPM, I–V–vi–IV in C, warm pad + arpeggio + soft kick, gentle build |
+| `calm` | 68 BPM, no percussion, longer reverb |
+
+```bash
+python3 tools/make_music.py --duration 241.6 --mood uplifting --out music.wav
+```
+
+Voices are built from harmonic partials with per-partial decay, then sent through
+a synthetic plate reverb (block FFT convolution). The arrangement eases each
+instrument in over its own range rather than switching it on, and the level is
+deliberately flat through the middle so the bed does not swell under the video.
+Output is normalised to about -19.6 dBFS RMS, which sits under a voiceover
+without competing with it.
 
 ### Environment notes
 

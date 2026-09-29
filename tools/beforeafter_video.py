@@ -405,6 +405,34 @@ def text_blocks(page, boilerplate=()):
     return out
 
 
+def displayed_photo_boxes(page, min_side=60, max_aspect=6.0):
+    """
+    Photo boxes exactly as the PDF places them, from its own image records.
+
+    This is authoritative in a way pixel analysis is not: a PDF often stores a
+    tall source image and shows only a cropped window of it, so the *displayed*
+    box is what the slide actually shows. Very wide/thin boxes are logos or
+    rules and are dropped.
+    """
+    out = []
+    try:
+        infos = page.get_image_info()
+    except Exception:
+        return out
+    for info in infos:
+        bb = info.get("bbox")
+        if not bb:
+            continue
+        x0, y0, x1, y1 = bb
+        w, h = x1 - x0, y1 - y0
+        if w < min_side or h < min_side:
+            continue
+        if max(w / h, h / w) > max_aspect:
+            continue
+        out.append((x0, y0, x1, y1))
+    return out
+
+
 def _same_row(boxes, px_box):
     """Does a pair of photo boxes correspond to this row bbox?"""
     x0, y0, x1, y1 = px_box
@@ -516,7 +544,7 @@ def _cluster_rows(items, tol_frac=0.5):
 
 
 def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, pages=None,
-                           args_only_labelled=False):
+                           args_only_labelled=False, source_mode="auto", clip_px=1900):
     """
     Pull one BEFORE/AFTER pair per visual row of two side-by-side images.
 
@@ -535,7 +563,46 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
 
         produced = 0
 
-        # ---- 1) native embedded images ----------------------------------
+        # ---- 1) the PDF's own photo boxes, clip-rendered ----------------
+        # Preferred: it reproduces exactly what the slide shows, including any
+        # cropping the designer applied to a taller source image.
+        blocks = text_blocks(page, boilerplate)
+        labels = labels_on_page(page)
+        used = set()
+
+        if source_mode != "native":
+            photo_boxes = displayed_photo_boxes(page)
+            rows = cluster_rows(photo_boxes)
+            if rows:
+                made = 0
+                for row in rows:
+                    if len(row) != 2:
+                        continue
+                    (a0, b0, a1, b1), (c0, d0, c1, d1) = row
+                    bbox = (a0, min(b0, d0), c1, max(b1, d1))
+                    lk = label_for_photo(labels, a0, b0, a1, b1, page.rect.height)
+                    rk = label_for_photo(labels, c0, d0, c1, d1, page.rect.height)
+                    if (lk, rk) == ("after", "before"):
+                        (a0, b0, a1, b1), (c0, d0, c1, d1) = (c0, d0, c1, d1), (a0, b0, a1, b1)
+                    labelled = (lk, rk) in (("before", "after"), ("after", "before"))
+                    if args_only_labelled and not labelled:
+                        continue
+                    # one DPI for the pair: set by the wider photo, so the two
+                    # halves come out at an identical pixel scale
+                    shared_dpi = dpi_for_width(max(a1 - a0, c1 - c0), target_px=clip_px)
+                    before = render_clip(page, (a0, b0, a1, b1), shared_dpi)
+                    after = render_clip(page, (c0, d0, c1, d1), shared_dpi)
+                    cap = caption_for_row(blocks, bbox, page.rect.height, used)
+                    if cap:
+                        used = used | {id(b) for b in blocks if b[4] == cap}
+                    pairs.append(_record(pairs, pno, before, after, "clip-render",
+                                         inspect_dir, jpg_quality, caption=cap,
+                                         page_bbox=bbox, labelled=labelled))
+                    made += 1
+                if made:
+                    continue
+
+        # ---- 2) native embedded images ----------------------------------
         items = []
         for img in page.get_images(full=True):
             xref = img[0]
@@ -547,9 +614,6 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
                 if r.width > 60 and r.height > 60:
                     items.append((r, xref))
 
-        blocks = text_blocks(page, boilerplate)
-        labels = labels_on_page(page)
-        used = set()
         for row in _cluster_rows(items):
             if len(row) != 2:
                 continue
@@ -635,6 +699,35 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
 
     doc.close()
     return pairs, notes
+
+
+def dpi_for_width(width_pt, target_px=1900, max_dpi=600.0):
+    """DPI that brings a box of this width up to `target_px`."""
+    return min(max_dpi, max(96.0, target_px / max(1e-3, width_pt) * 72.0))
+
+
+def render_clip(page, box, dpi, max_dpi=600.0):
+    """
+    Render just one photo box at a given DPI.
+
+    Rendering the clip (rather than the whole page) keeps memory small. The DPI
+    is passed in rather than derived from each box, so both halves of a pair are
+    rendered at the same scale and the wipe lines up pixel for pixel.
+    """
+    x0, y0, x1, y1 = box
+    z = min(max_dpi, max(60.0, dpi)) / 72.0
+    pix = page.get_pixmap(
+        matrix=pymupdf.Matrix(z, z),
+        clip=pymupdf.Rect(x0, y0, x1, y1),
+        alpha=False,
+    )
+    return np.asarray(
+        Image.frombytes(
+            "RGBA" if pix.n == 4 else ("RGB" if pix.n == 3 else "L"),
+            (pix.width, pix.height),
+            pix.samples,
+        ).convert("RGB")
+    )
 
 
 def _record(pairs, page, before, after, method, inspect_dir, quality, split_x=0,
@@ -1040,6 +1133,13 @@ def main():
     ap.add_argument("--before-dir")
     ap.add_argument("--after-dir")
     ap.add_argument("--dpi", type=int, default=220, help="page render DPI (fallback path)")
+    ap.add_argument("--source", choices=["auto", "native", "render"], default="auto",
+                    help="auto (default): use the PDF's displayed photo boxes and "
+                         "clip-render them, which respects any crop the designer "
+                         "applied. native: raw embedded images (no crop). "
+                         "render: analyse a full page render.")
+    ap.add_argument("--clip-px", type=int, default=1900, dest="clip_px",
+                    help="target width in pixels when clip-rendering a photo")
     ap.add_argument("--pages", help="only these pages, e.g. 1,3,5-8")
 
     ap.add_argument("--out", default="out/before_after.mp4")
@@ -1073,7 +1173,11 @@ def main():
     ap.add_argument("--wipe-dur", type=float, default=1.7, dest="wipe_dur")
     ap.add_argument("--hold-after", type=float, default=3.4, help="how long AFTER sits on screen")
     ap.add_argument("--transition", type=float, default=0.45, help="crossfade between pairs")
-    ap.add_argument("--audio", help="optional narration/music to mux in")
+    ap.add_argument("--audio", help="optional narration/music file to mux in")
+    ap.add_argument("--music", choices=["uplifting", "calm"],
+                    help="generate an original royalty-free music bed of exactly the "
+                         "video's length and mux it in (see tools/make_music.py). "
+                         "Takes precedence over --audio.")
 
     args = ap.parse_args()
     args.caption_map = load_caption_map(args.caption_map_path)
@@ -1103,6 +1207,7 @@ def main():
             pairs, notes = extract_pairs_from_pdf(
                 args.pdf, dpi=args.dpi, inspect_dir=dump_dir, pages=pages,
                 args_only_labelled=args.only_labelled,
+                source_mode=args.source, clip_px=args.clip_px,
             )
         except pymupdf.FileDataError as e:
             sys.exit(f"Could not read {args.pdf}: {e} (is it a valid PDF?)")
@@ -1172,8 +1277,20 @@ def main():
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     silent, total, done = render(pairs, args)
-    if args.audio:
-        mux(silent, args.audio, args.out)
+
+    audio = args.audio
+    if args.music:
+        sys.path.insert(0, HERE)
+        from make_music import make_music as compose, write_wav
+
+        dur = done / float(args.fps)
+        stereo, bpm = compose(dur, args.music)
+        audio = os.path.join(tempfile.gettempdir(), f"ba_music_{args.music}.wav")
+        write_wav(audio, stereo)
+        print(f"music: {args.music} @ {bpm:.0f} BPM, {dur:.1f}s -> {audio}")
+
+    if audio:
+        mux(silent, audio, args.out)
     else:
         shutil.move(silent, args.out)
     print(f"rendered {done} frames ({done / args.fps:.1f}s @ {args.fps}fps) -> {args.out}")
