@@ -22,6 +22,18 @@ image — instead of the two sitting next to each other on a slide.
 Both halves of a pair are always cut to a **shared vertical band**, so they have
 identical dimensions and the wipe lines up exactly.
 
+### Captions
+
+Each pair's caption is read from the PDF: the nearest text block above the row
+(or, failing that, below it), requiring horizontal overlap so a neighbouring
+column's caption is never borrowed. Trailing gloss like `before | after`,
+`BEFORE/AFTER` or `before vs after` is stripped, so what lands on screen is the
+location or subject. Nearest wins; ties within ~12pt are broken by which block is
+centred over the pair, so a small corner label can't beat the real caption.
+
+The caption fades in and sits above the title badge. Override with
+`--caption "text"` (forces one caption everywhere) or `--no-captions`.
+
 ### Usage
 
 ```bash
@@ -38,7 +50,13 @@ python3 tools/beforeafter_video.py --pdf deck.pdf --out out/reveal.mp4 \
 ```
 
 Key options: `--wipe lr|rl|tb|bt`, `--zoom`, `--aspect common|none`, `--pages 1,3-5`,
-`--fps`, `--crf`, `--no-labels`, `--no-knob`, `--audio narration.wav`, `--report r.json`.
+`--fps`, `--crf`, `--no-labels`, `--no-knob`, `--caption`, `--no-captions`,
+`--audio narration.wav`, `--report r.json`.
+
+Timing defaults are deliberately unhurried (`--hold-before 3.4 --wipe-dur 1.7
+--hold-after 3.4`, so ~8.5s per pair) to give each transformation time to land.
+`--report out.json` records the extracted pairs, their captions and the settings,
+which doubles as a check that the right columns were picked.
 
 ### Expected input
 

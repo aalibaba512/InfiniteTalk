@@ -24,6 +24,7 @@ import argparse
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -63,6 +64,15 @@ def font(path, size):
         return ImageFont.truetype(path, size)
     except Exception:
         return ImageFont.load_default()
+
+
+def effective_caption(pair, args):
+    """The caption that will actually be shown for a pair."""
+    if getattr(args, "no_captions", False):
+        return ""
+    if getattr(args, "caption", None) is not None:
+        return args.caption
+    return pair.caption
 
 
 def load_rgb(path):
@@ -239,7 +249,7 @@ def pairs_from_page(arr, tol=14):
         left = crop_box(arr, (lx0, y0, lx1, y1))
         right = crop_box(arr, (rx0, y0, rx1, y1))
         if left.size and right.size:
-            out.append((left, right))
+            out.append((left, right, (lx0, y0, rx1, y1)))
 
     if out:
         return out
@@ -255,7 +265,7 @@ def pairs_from_page(arr, tol=14):
     if split is None:
         bb = content_bbox(mask)
         split = (bb[0] + bb[2]) // 2 if bb else w // 2
-    return [(arr[:, :split], arr[:, split:])]
+    return [(arr[:, :split], arr[:, split:], (0, 0, w, h))]
 
 
 def split_page(arr, tol=14):
@@ -278,6 +288,75 @@ class Pair:
     after_size: tuple
     method: str
     split_x: int = 0
+    caption: str = ""
+    page_bbox: tuple = ()
+
+
+CAPTION_JUNK = re.compile(
+    r"\s*[:\-\u2013\u2014|]?\s*(before\s*(?:\||&|and|/|vs\.?)\s*after)\s*[:\-\u2013\u2014|]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def clean_caption(text):
+    """Tidy a raw text block into something worth putting on screen."""
+    t = " ".join(text.split())
+    if not t:
+        return ""
+    prev = None
+    while prev != t:                      # strip repeated trailing junk
+        prev = t
+        t = CAPTION_JUNK.sub("", t).strip()
+    t = t.strip(":-|\u2013\u2014 ")
+    return t
+
+
+def text_blocks(page):
+    """Text blocks on the page as (x0, y0, x1, y1, text)."""
+    out = []
+    try:
+        blocks = page.get_text("blocks")
+    except Exception:
+        return out
+    for b in blocks:
+        if len(b) >= 5 and (len(b) < 7 or b[6] == 0):     # 0 == text
+            txt = clean_caption(str(b[4]))
+            if txt:
+                out.append((b[0], b[1], b[2], b[3], txt))
+    return out
+
+
+def caption_for_row(blocks, bbox, page_h, used):
+    """
+    Nearest caption for a pair's page-space bbox.
+
+    Looks just above the row, then just below, requiring horizontal overlap so a
+    caption belonging to another column is never borrowed.
+    """
+    x0, y0, x1, y1 = bbox
+    gap = max(24.0, 0.055 * page_h)
+
+    def overlaps(b):
+        return min(b[2], x1) - max(b[0], x0) > 0.25 * min(b[2] - b[0], x1 - x0)
+
+    cands = []
+    for b in blocks:
+        if id(b) in used or not overlaps(b):
+            continue
+        # prefer a caption sitting horizontally centred over the pair, so a
+        # small label in the far corner never beats the real caption
+        bcx, pcx = (b[0] + b[2]) / 2, (x0 + x1) / 2
+        half = max(1.0, (x1 - x0) / 2)
+        centrality = max(0.0, 1.0 - abs(bcx - pcx) / half)
+        if b[3] <= y0 and (y0 - b[3]) <= gap:             # above the row
+            cands.append((y0 - b[3], centrality, b))
+        elif b[1] >= y1 and (b[1] - y1) <= gap:           # below the row
+            cands.append(((b[1] - y1) * 1.15, centrality, b))   # slight bias upward
+    if not cands:
+        return ""
+    # nearest wins; ties (within ~12pt) broken by centrality
+    cands.sort(key=lambda c: (round(c[0] / 12.0), -round(c[1], 3)))
+    return cands[0][2][4]
 
 
 def _native_image(doc, xref):
@@ -339,6 +418,8 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
                 if r.width > 60 and r.height > 60:
                     items.append((r, xref))
 
+        blocks = text_blocks(page)
+        used = set()
         for row in _cluster_rows(items):
             if len(row) != 2:
                 continue
@@ -353,7 +434,12 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
             except Exception as e:
                 notes.append(f"page {pno}: native extract failed ({e}); falling back")
                 break
-            pairs.append(_record(pairs, pno, before, after, "native-image", inspect_dir, jpg_quality))
+            bbox = (r0.x0, min(r0.y0, r1.y0), r1.x1, max(r0.y1, r1.y1))
+            cap = caption_for_row(blocks, bbox, page.rect.height, used)
+            if cap:
+                used = used | {id(b) for b in blocks if b[4] == cap}
+            pairs.append(_record(pairs, pno, before, after, "native-image",
+                                 inspect_dir, jpg_quality, caption=cap, page_bbox=bbox))
             produced += 1
 
         if produced:
@@ -373,16 +459,25 @@ def extract_pairs_from_pdf(pdf_path, dpi=220, inspect_dir=None, jpg_quality=95, 
         if not found:
             notes.append(f"page {pno}: no before/after pair found, skipped")
             continue
-        for before, after in found:
+        blocks = text_blocks(page)
+        used = set()
+        scale = 72.0 / zoom
+        for before, after, px_box in found:
             if before.size == 0 or after.size == 0:
                 continue
-            pairs.append(_record(pairs, pno, before, after, "page-render", inspect_dir, jpg_quality))
+            bbox = tuple(v * scale for v in px_box)
+            cap = caption_for_row(blocks, bbox, page.rect.height, used)
+            if cap:
+                used = used | {id(b) for b in blocks if b[4] == cap}
+            pairs.append(_record(pairs, pno, before, after, "page-render",
+                                 inspect_dir, jpg_quality, caption=cap, page_bbox=bbox))
 
     doc.close()
     return pairs, notes
 
 
-def _record(pairs, page, before, after, method, inspect_dir, quality, split_x=0):
+def _record(pairs, page, before, after, method, inspect_dir, quality, split_x=0,
+            caption="", page_bbox=()):
     idx = len(pairs) + 1
     before = upscale_to(before, 900)
     after = upscale_to(after, 900)
@@ -401,6 +496,8 @@ def _record(pairs, page, before, after, method, inspect_dir, quality, split_x=0)
         after_size=(int(after.shape[1]), int(after.shape[0])),
         method=method,
         split_x=int(split_x),
+        caption=caption,
+        page_bbox=tuple(float(v) for v in page_bbox) if page_bbox else (),
     )
 
 
@@ -508,6 +605,49 @@ def badge(W, H, text, size, color, where="top-left", alpha=185):
     return Stamp(a[:, :, :3], a[:, :, 3:4] / 255.0)
 
 
+def caption_stamp(W, H, text, alpha=1.0, margin=None, bottom_reserve=0):
+    """
+    Caption pill pinned bottom-left, indented for a modern look.
+
+    Long captions are wrapped and the trailing gloss ("before | after") is
+    dropped upstream, so what lands on screen is the location or subject.
+    """
+    if not text:
+        return None
+    size = int(H * 0.040)
+    f = font(FONT_BOLD, size)
+    max_w = int(W * 0.62)
+    words, line, lines = text.split(), "", []
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    for wd in words:
+        trial = (line + " " + wd).strip()
+        if probe.textlength(trial, font=f) <= max_w or not line:
+            line = trial
+        else:
+            lines.append(line)
+            line = wd
+    if line:
+        lines.append(line)
+    lines = lines[:2]
+
+    lh = int(size * 1.28)
+    px, py = int(size * 0.85), int(size * 0.60)
+    tw = max(int(probe.textlength(l, font=f)) for l in lines)
+    bw, bh = tw + 2 * px, lh * len(lines) + 2 * py
+
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(ov)
+    x = margin if margin is not None else int(W * 0.045)
+    y = H - bh - int(H * 0.085) - bottom_reserve
+    d.rounded_rectangle([x, y, x + bw, y + bh], radius=int(bh * 0.28), fill=(8, 10, 14, 205))
+    d.rounded_rectangle([x, y, x + bw, y + bh], radius=int(bh * 0.28),
+                        outline=(255, 255, 255, 60), width=max(2, size // 22))
+    for i, l in enumerate(lines):
+        d.text((x + px, y + py + i * lh), l, font=f, fill=(255, 255, 255))
+    a = np.asarray(ov).astype(np.float32)
+    return Stamp(a[:, :, :3], (a[:, :, 3:4] / 255.0) * alpha)
+
+
 def progress_bar(frame, frac, h=6):
     """Write the progress bar straight into the bottom rows of the frame."""
     H, W = frame.shape[:2]
@@ -605,7 +745,24 @@ def render(pairs, args):
     lbl_b = badge(W, H, args.label_before, int(H * 0.048), (255, 255, 255), "top-left") if not args.no_labels else None
     lbl_a = badge(W, H, args.label_after, int(H * 0.048), (150, 255, 170), "top-left") if not args.no_labels else None
 
+    # bottom-left furniture: the title, plus per-pair captions stacked above it
+    MARGIN = int(H * 0.042 * 0.95)
     ttl = badge(W, H, args.title, int(H * 0.042), (255, 255, 255), "bottom-left", alpha=150) if args.title else None
+    reserve = (H - ttl.y0 + int(H * 0.020)) if ttl else 0
+
+    caps = []
+    for p in pairs:
+        text = effective_caption(p, args)
+        caps.append(
+            [caption_stamp(W, H, text, a, margin=MARGIN, bottom_reserve=reserve)
+             for a in (0.35, 0.7, 1.0)] if text else None
+        )
+
+    def caption_at(i, frac):
+        """Fade the caption in over the first ~0.35 when it appears."""
+        if i >= len(caps) or not caps[i]:
+            return None
+        return caps[i][min(len(caps[i]) - 1, int(max(0.0, frac) / 0.35 * 3))]
 
     segs = build_timeline(len(pairs), args.hold_before, args.wipe_dur, args.hold_after, args.transition, fps)
     total = sum(s[2] for s in segs)
@@ -635,11 +792,17 @@ def render(pairs, args):
                 f = ken_burns(bb, t, 1.0, 1.0 + zmid, pan=(0.0, -0.03))
                 if lbl_b:
                     lbl_b.apply(f)
+                c = caption_at(i, t)
+                if c:
+                    c.apply(f)
 
             elif kind == "after":
                 f = ken_burns(ba, t, 1.0 + zmid, 1.0 + zend, pan=(0.0, 0.03))
                 if lbl_a:
                     lbl_a.apply(f)
+                c = caption_at(i, t)
+                if c:
+                    c.apply(f)
 
             elif kind == "wipe":
                 e = ease(t)
@@ -666,6 +829,9 @@ def render(pairs, args):
                 lab = lbl_b if e < 0.55 else lbl_a
                 if lab:
                     lab.apply(f)
+                c = caption_at(i, t)
+                if c:
+                    c.apply(f)
 
             else:  # crossfade into the next pair
                 fa = ken_burns(ba, 1.0, 1.0 + zend, 1.0 + zend)
@@ -676,6 +842,9 @@ def render(pairs, args):
                 if lbl_b:
                     lbl_b.apply(fb)
                 f = (fa.astype(np.float32) * (1 - t) + fb.astype(np.float32) * t).astype(np.uint8)
+                c = caption_at(i, t)
+                if c:
+                    c.apply(f)
 
             if ttl:
                 ttl.apply(f)
@@ -730,10 +899,12 @@ def main():
     ap.add_argument("--title", help="caption pinned bottom-left for the whole video")
     ap.add_argument("--no-labels", action="store_true")
     ap.add_argument("--no-knob", action="store_true", help="plain divider line, no handle")
+    ap.add_argument("--caption", help="force this caption on every pair (default: read from the PDF)")
+    ap.add_argument("--no-captions", action="store_true", help="never show captions")
 
-    ap.add_argument("--hold-before", type=float, default=2.2)
-    ap.add_argument("--wipe-dur", type=float, default=1.1, dest="wipe_dur")
-    ap.add_argument("--hold-after", type=float, default=2.2)
+    ap.add_argument("--hold-before", type=float, default=3.4, help="how long BEFORE sits on screen")
+    ap.add_argument("--wipe-dur", type=float, default=1.7, dest="wipe_dur")
+    ap.add_argument("--hold-after", type=float, default=3.4, help="how long AFTER sits on screen")
     ap.add_argument("--transition", type=float, default=0.45, help="crossfade between pairs")
     ap.add_argument("--audio", help="optional narration/music to mux in")
 
@@ -758,9 +929,14 @@ def main():
         os.makedirs(dump_dir, exist_ok=True)
 
     if args.pdf:
-        pairs, notes = extract_pairs_from_pdf(
-            args.pdf, dpi=args.dpi, inspect_dir=dump_dir, pages=pages
-        )
+        if not os.path.exists(args.pdf):
+            sys.exit(f"PDF not found: {args.pdf}")
+        try:
+            pairs, notes = extract_pairs_from_pdf(
+                args.pdf, dpi=args.dpi, inspect_dir=dump_dir, pages=pages
+            )
+        except pymupdf.FileDataError as e:
+            sys.exit(f"Could not read {args.pdf}: {e} (is it a valid PDF?)")
     elif args.before_dir and args.after_dir:
         pick = lambda d: sorted(f for f in os.listdir(d) if f.lower().endswith(IMG_EXT))
         bs, as_ = pick(args.before_dir), pick(args.after_dir)
@@ -791,7 +967,8 @@ def main():
         with open(args.report, "w") as fh:
             json.dump({
                 "source": args.pdf or f"{args.before_dir} + {args.after_dir}",
-                "pairs": [asdict(p) for p in pairs],
+                "pairs": [dict(asdict(p), effective_caption=effective_caption(p, args))
+                          for p in pairs],
                 "notes": notes,
                 "render": {
                     "size": [args.width, args.height], "fps": args.fps, "wipe": args.wipe,
