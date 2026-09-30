@@ -1,0 +1,14 @@
+{
+  "name": "tefos-quiz",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chapter quiz engine for Telecom Foundation Education System notebook QR programme",
+  "type": "commonjs",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node src/server.js",
+    "seed": "node src/seed.js --force",
+    "test": "node test/e2e.js",
+    "report": "node report.js"
+  }
+}
