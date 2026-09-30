@@ -21,6 +21,15 @@ Coordinates were cross-checked against the **GeoNames** gazetteer: the largest
 deviation from the published coordinates used here is ≈5 km — far less than one
 printed line width at this scale.
 
+## Design version (for use inside a layout)
+
+The `design/` folder holds a stripped-back **graphic** version of the same map —
+no rivers, provinces, neighbours, graticule or legend, just the silhouette and
+the 13 city names set as the artwork in three treatments (solid knockout, hairline,
+pale tint), each as outlined **SVG**, transparent **PDF** and 3000 px transparent
+**PNG**, plus no-title and silhouette-only variants. See
+[`design/README.md`](design/README.md).
+
 ## Regenerating
 
 ```bash
