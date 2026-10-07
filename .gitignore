@@ -5,3 +5,8 @@
 __pycache__/
 *.py[cod]
 .venv/
+
+# large-format artwork master: scratch + local toolchain venv
+art-master/_smoke/
+.venv-art/
+art-master/chasing_innovation_master_raster_100dpi.png

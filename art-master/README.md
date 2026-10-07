@@ -1,0 +1,69 @@
+# CHASING INNOVATION — large-format vector print master
+
+Faithful vector reconstruction of the reference artwork
+(`PrintReady_WallsSchoolG8-1-01.jpg`, "Vinyl Stair Ground 17ft×8.8ft" sheet)
+as a professional print master for a **17 ft × 8.6 ft** wall graphic
+(page ratio 1.9767 : 1), in the original's clean flat technology-illustration
+style: no gradients, textures, glows, blur or painterly effects — solid fills
+and crisp geometric paths only.
+
+## Deliverables
+
+| File | What it is |
+|---|---|
+| `chasing_innovation_master.svg` | **Primary vector master.** 14688 pt × 7430.4 pt (= 17.0000 ft × 8.6000 ft). Pure SVG 1.1 paths/shapes, flat fills. |
+| `chasing_innovation_master_print.pdf` | **Print-ready vector PDF**, same physical page size. 100% vector (≈15 KB). |
+| `chasing_innovation_master_raster_100dpi.png` | Raster master at **100 DPI full size: 20 400 × 10 320 px** (strip-rendered, assembled lossless). |
+
+The SVG/PDF are resolution-independent; the 100 dpi PNG is a convenience
+raster for shops that cannot take vectors. Render any other DPI with
+`tools/render_proof.py` (or the strip technique in this README).
+
+## Rebuild / render
+
+```bash
+python3 -m venv .venv-art && .venv-art/bin/pip install pymupdf pillow svglib reportlab numpy
+.venv-art/bin/python art-master/build_master.py                 # regenerate the SVG
+.venv-art/bin/python art-master/tools/render_proof.py 6000 out.png   # proof raster
+```
+
+Print PDF regeneration (keeps exact 17×8.6 ft page):
+
+```python
+import pymupdf
+doc = pymupdf.open("art-master/chasing_innovation_master.svg")
+open("out.pdf","wb").write(doc.convert_to_pdf())   # page = 14688 x 7430.4 pt
+```
+
+> NOTE: declare page size in **pt** in the SVG. `svglib` rescales `px` by 0.75
+> (96 px/in → 72 pt/in), silently shrinking the page to 12.75 × 6.45 ft.
+
+## Composition (all elements reconstructed, nothing added/removed)
+
+- Centre rocket: dark-teal hull, white panel with gold trim, porthole ring,
+  teal gear + chip and gold gear, inner circuit traces, twin fins, tail fin.
+- Gold/cream exhaust flame into a layered scalloped smoke mound.
+- Layered mountain range (sage / olive / deep green / dark front band) with
+  ridge line detail, full-bleed left–right.
+- Left circuit cluster: gold spiral + teal arc, edge-bleed traces with
+  ring/dot terminals, chip, gold + slate-teal + grey gears, keys, three
+  propellers, quadcopter drone, gold sweep line.
+- Right circuit cluster: satellite with gridded solar wings + drone rotors,
+  radio arcs, gold spiral, edge-bleed traces, chip, gears, keys, exit traces.
+- "CHASING INNOVATION" set as custom monoline angular-techno vector glyphs
+  (drawn as strokes, vector-sharp at any size), same position/size/colour.
+
+## Palette (hex)
+
+bg `#F7F9FA` · teal dark `#0E565C` · teal mid `#2E7F87` · slate teal `#5F8B8E`
+· pale teal `#7FA3A6` · gold `#D8AC4E` · gold dark `#B08429` · gold light
+`#EACB72` · cream `#F6ECD4` · greys `#AEB6BA/#7E8A8F/#57646A` · mountain
+`#A9B49C/#64805F/#2F5847/#1F4636` · title green `#187C3F` · satellite
+`#1E4A3C`.
+
+## Verification performed
+
+- PDF page measures exactly 17.0000 ft × 8.6000 ft (pymupdf).
+- Straight-edge probe: 0 non-pure pixels across boundaries → crisp paths.
+- Solid-fill probe: 1 distinct value per region → flat colour, no noise.
+- 6000 px proof crops compared element-by-element against the reference.
