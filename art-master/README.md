@@ -27,6 +27,17 @@ Both vector files scale infinitely; verify/regenerate with
 `tools/svg_to_eps.py --check` (renders the identical transformed path data
 through reportlab for visual comparison).
 
+### Tree of Knowledge wall (sheet G8-1-03) — infinite-enlargement vectors
+
+| File | What it is |
+|---|---|
+| `knowledge_tree_master.svg` | Traced true-vector SVG (11 406 Bézier paths), page 14688 pt × 7776 pt = **17 ft × 9 ft**. |
+| `knowledge_tree_master.eps` | Same path data as EPSF-3.0, `%%BoundingBox 0 0 14688 7776`. |
+| `generated/knowledge_tree_17x9.png` | Source generation (native 2816×1472). |
+
+Regenerate: `tools/svg_to_eps.py --svg knowledge_tree_master.svg --eps
+knowledge_tree_master.eps --px 2780 1472 --ft 17 9 --check`.
+
 The SVG/PDF are resolution-independent; the 100 dpi PNG is a convenience
 raster for shops that cannot take vectors. Render any other DPI with
 `tools/render_proof.py` (or the strip technique in this README).
