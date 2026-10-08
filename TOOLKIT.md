@@ -5,7 +5,7 @@
 > Star counts are approximate (as of research date). Add the ones you want into the repo as needed.
 
 ### ⚡ These repos are now registered in this repository
-- **Registry:** `toolkit.repos.toml` (machine-readable source of truth — 67 repos)
+- **Registry:** `toolkit.repos.toml` (machine-readable source of truth — 69 repos)
 - **Fetcher:** `python3 tools/toolkit.py clone core|<category>|<name>` → shallow-clones into gitignored `.toolkit/`
 - **Browse:** `python3 tools/toolkit.py list` · `python3 tools/toolkit.py search ai`
 - Future working sessions: see **`AGENTS.md`** for task → tool mapping and ground rules.

@@ -53,6 +53,8 @@ IT_LIB = IT_DIR / "imagetracer_v1.2.6.js"
 IT_URL = ("https://codeload.github.com/jankovicsandras/imagetracerjs/"
           "tar.gz/refs/heads/master")
 BRIDGE = Path(__file__).resolve().parent / "imagetracer_bridge.js"
+POTRACE_BRIDGE = Path(__file__).resolve().parent / "potrace_bridge.js"
+POTRACE_DIR = REPO / ".toolkit" / "potrace-engine"
 
 MODES = {
     "finest": dict(engine="imagetracer", supersample=2, quant=64, merge_dist=32,
@@ -148,6 +150,47 @@ def _ensure_imagetracer() -> Path:
     return IT_LIB
 
 
+def _ensure_potrace() -> Path:
+    if (POTRACE_DIR / "node_modules" / "potrace").exists():
+        return POTRACE_DIR
+    POTRACE_DIR.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["npm", "init", "-y"], cwd=POTRACE_DIR, check=True,
+                   capture_output=True)
+    subprocess.run(["npm", "install", "potrace", "--no-audit", "--no-fund"],
+                   cwd=POTRACE_DIR, check=True, capture_output=True)
+    return POTRACE_DIR
+
+
+def _trace_potrace(img: Image.Image, opts: dict) -> str:
+    """Multicolor potrace (the Inkscape/vectormaker.co approach): one binary
+    potrace trace per palette color, stacked back-to-front with 1px dilated
+    seams. Smooth optimal béziers; best on crisp flat input."""
+    import numpy as _np
+    _ensure_potrace()
+    arr = _np.asarray(img)
+    cols, counts = _np.unique(arr.reshape(-1, 3), axis=0, return_counts=True)
+    order = _np.argsort(-counts)
+    with tempfile.TemporaryDirectory(prefix="pt-") as td:
+        layers = []
+        for rank, i in enumerate(order):
+            c = cols[i]
+            mask = _np.all(arr == c, axis=-1)
+            m = Image.fromarray((~mask * 255).astype(_np.uint8))
+            if rank > 0:
+                m = m.filter(ImageFilter.MinFilter(3))
+            f = str(Path(td) / f"mask-{rank:02d}.png")
+            m.save(f)
+            layers.append({"file": f, "fill": "#%02x%02x%02x" % tuple(int(v) for v in c)})
+        lj = Path(td) / "layers.json"
+        lj.write_text(json.dumps(layers))
+        o = dict(turdSize=5, alphaMax=1.2, optTolerance=0.4, optCurve=True,
+                 threshold=127, **opts)
+        out = Path(td) / "out.svg"
+        subprocess.run(["node", str(POTRACE_BRIDGE), str(POTRACE_DIR), str(out),
+                        str(lj), json.dumps(o)], check=True, capture_output=True)
+        return out.read_text()
+
+
 def _trace_imagetracer(img: Image.Image, opts: dict) -> str:
     lib = _ensure_imagetracer()
     w, h = img.size
@@ -240,6 +283,8 @@ def vectorize(input_path, output_path=None, *, mode: str = "finest",
 
     if eng == "imagetracer" and mode != "lineart":
         raw_svg = _trace_imagetracer(work, preset.get("it", {}))
+    elif eng == "potrace" and mode != "lineart":
+        raw_svg = _trace_potrace(work, preset.get("pt", {}))
     else:  # vtracer
         try:
             import vtracer
@@ -283,7 +328,7 @@ def main(argv=None) -> int:
     ap.add_argument("input")
     ap.add_argument("output", nargs="?")
     ap.add_argument("--mode", default="finest", choices=sorted(MODES))
-    ap.add_argument("--engine", choices=["imagetracer", "vtracer"],
+    ap.add_argument("--engine", choices=["imagetracer", "potrace", "vtracer"],
                     help="override tracing engine")
     ap.add_argument("--palette", type=int)
     ap.add_argument("--merge-dist", type=int)

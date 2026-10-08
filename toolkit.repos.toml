@@ -193,7 +193,7 @@ tags = ["awesome", "meta"]
 use = "Curated list of video frameworks, libraries, specs — overflow directory."
 license = "List"
 
-# --------------------------------------------------------------- design (15)
+# --------------------------------------------------------------- design (17)
 
 [[repo]]
 name = "penpot"
@@ -249,6 +249,22 @@ category = "design"
 url = "https://github.com/jankovicsandras/imagetracerjs"
 tags = ["core", "vectorize", "raster-to-svg", "javascript"]
 use = "Smooth layered cartoon vectorization — the DEFAULT engine behind tools/vectorize.py; auto-fetched into .toolkit/ on first use."
+license = "MIT"
+
+[[repo]]
+name = "node-potrace"
+category = "design"
+url = "https://github.com/tooolbox/node-potrace"
+tags = ["vectorize", "potrace", "javascript"]
+use = "JS port of potrace (the Inkscape tracing core); multicolor layer engine via tools/potrace_bridge.js (--engine potrace)."
+license = "MIT"
+
+[[repo]]
+name = "vectorizer"
+category = "design"
+url = "https://github.com/btk/vectorizer"
+tags = ["vectorize", "reference"]
+use = "Reference implementation for the multicolor-potrace layering approach (demo: vectormaker.co)."
 license = "MIT"
 
 [[repo]]

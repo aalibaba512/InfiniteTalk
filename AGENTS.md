@@ -8,7 +8,7 @@ reuse across projects.
 
 | File | Purpose |
 |---|---|
-| `toolkit.repos.toml` | **Source of truth.** Machine-readable registry of all 67 curated repos (name, URL, category, tags, use-case, license). |
+| `toolkit.repos.toml` | **Source of truth.** Machine-readable registry of all 69 curated repos (name, URL, category, tags, use-case, license). |
 | `TOOLKIT.md` | Human-readable catalog with descriptions and GitHub Explore links. |
 | `tools/toolkit.py` | CLI to list / search / shallow-clone / update any of them. |
 
