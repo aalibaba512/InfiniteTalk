@@ -193,7 +193,7 @@ tags = ["awesome", "meta"]
 use = "Curated list of video frameworks, libraries, specs — overflow directory."
 license = "List"
 
-# --------------------------------------------------------------- design (14)
+# --------------------------------------------------------------- design (15)
 
 [[repo]]
 name = "penpot"
@@ -239,8 +239,16 @@ license = "GPL-3.0 / GPL-2.0+"
 name = "vtracer"
 category = "design"
 url = "https://github.com/visioncortex/vtracer"
-tags = ["core", "vectorize", "raster-to-svg", "python"]
-use = "Best free raster→SVG tracer (MIT). Engine behind tools/vectorize.py — use the 1.0 WASM build via `npm install @visioncortex/vtracer` (simplify + cutout = smooth beziers); `pip install vtracer` is the 0.6 fallback."
+tags = ["vectorize", "raster-to-svg", "python", "lineart"]
+use = "Raster→SVG tracer (MIT); lineart + fallback engine in tools/vectorize.py (`pip install vtracer`)."
+license = "MIT"
+
+[[repo]]
+name = "imagetracerjs"
+category = "design"
+url = "https://github.com/jankovicsandras/imagetracerjs"
+tags = ["core", "vectorize", "raster-to-svg", "javascript"]
+use = "Smooth layered cartoon vectorization — the DEFAULT engine behind tools/vectorize.py; auto-fetched into .toolkit/ on first use."
 license = "MIT"
 
 [[repo]]

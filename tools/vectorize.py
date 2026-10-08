@@ -1,148 +1,87 @@
 #!/usr/bin/env python3
 """
-vectorize.py — clean, smooth raster → SVG vectorization, built on VTracer.
+vectorize.py — clean raster → SVG vectorization with two engines.
 
-Engine
-------
-visioncortex/vtracer (https://github.com/visioncortex/vtracer) — the
-most-starred free raster→vector converter on GitHub (MIT). Installed from
-PyPI:  pip install vtracer pillow numpy
+Engines
+-------
+  imagetracer (default for color) ... jankovicsandras/imagetracerjs (MIT, ~1.5k★)
+        smooth layered cartoon vectorization; auto-downloaded into .toolkit/
+  vtracer (lineart / --engine vtracer) ... visioncortex/vtracer (MIT, ~7.2k★)
+        pip install vtracer
 
-The patch (why this beats stock tracing on flat artwork)
---------------------------------------------------------
-Stock vtracer traces JPEG noise literally: staircase edges, ringing halos and
-thousands of speckle paths. This pipeline produces true vector-art output:
-
-  1. load & flatten ......... RGBA composited onto a background color
-  2. merged palette ......... over-quantize to 64, then collapse entries whose
-                              RGB distance < T — kills near-duplicate tones,
-                              so flat regions trace as ONE clean fill
-  3. median clean ........... 3×3 median removes compression speckle without
-                              dissolving thin lines (blur would melt them)
-  4. flat supersampling ..... NEAREST upscale keeps region fills perfectly flat
-                              (no anti-alias gradients → no halo layers); the
-                              spline fitter then smooths the pixel staircase
-                              into clean béziers (high corner threshold)
-  5. speckle guard .......... tiny disconnected blobs dropped; connected fine
-                              detail (chip pins, 2px traces) survives
-  6. SVG post ............... normalized header, viewBox, sub-pixel wrapper
-
-Measured on the 1376×768 demo artwork, 2× zoom inspection:
-  old naive finest  → 38,212 jagged paths, 13.3 MB, staircase edges
-  new finest        → ~1,600 smooth paths,  3.2 MB, clean flat fills
+Pipeline (color modes)
+----------------------
+  1. flatten RGBA onto background
+  2. merged palette ......... over-quantize to 64, collapse near-duplicate tones
+  3. median clean ........... kills compression speckle, keeps thin lines
+  4. flat supersample ....... NEAREST ×2 keeps fills flat (finest)
+  5. engine trace ........... imagetracer fits smooth quadratic/cubic splines
+                              (ltres/qtres tolerances, pathomit speckle guard)
+  6. bake & clip ............ scale + clamp baked into coordinates: output has
+                              NO transforms, nothing outside the viewBox, so
+                              browsers AND Photoshop/Illustrator render it alike
 
 CLI
 ---
-  python3 tools/vectorize.py INPUT [OUTPUT.svg] [--mode MODE] [options]
+  python3 tools/vectorize.py INPUT [OUT.svg] [--mode finest|balanced|compact|lineart]
+      [--engine imagetracer|vtracer] [--palette N] [--merge-dist T]
+      [--supersample N] [--bg auto|#hex] [--threshold T]
 
-  --mode     finest | balanced | compact | lineart      (default: finest)
-  --palette N         initial quantization colors before merging (default 64)
-  --merge-dist T      palette merge distance, 0 = off (default 28)
-  --supersample N     trace resolution multiplier (1 = native)
-  --bg auto|#rrggbb   background for flattening transparent images
-  --threshold T       binarization threshold for lineart (0..255)
-
-As a library
-------------
-  from tools.vectorize import vectorize
-  stats = vectorize("photo.png", "photo.svg", mode="finest")
+As a library:  from tools.vectorize import vectorize
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
-import os
 import re
-import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
+import urllib.request
 from pathlib import Path
-
-try:
-    import vtracer  # 0.6 fallback engine (pip)
-except ImportError:  # pragma: no cover
-    vtracer = None  # the 1.0 WASM engine (node) can still be used
 
 import numpy as np
 from PIL import Image, ImageFilter
 
-# ---------------------------------------------------------------------------
-# Presets
-# ---------------------------------------------------------------------------
-# VTracer spline-fitting knobs:
-#   filter_speckle    discard disconnected regions < N px (small = keep noise)
-#   color_precision   significant bits per RGB channel (8 = exact)
-#   layer_difference  color distance between stacked layers
-#   corner_threshold  min turn angle (deg) kept as a sharp corner;
-#                     high (100+) lets the spline smooth pixel staircases
-#   length_threshold  spline fitting tolerance in px
-#   splice_threshold  min angle (deg) between joined spline segments
+REPO = Path(__file__).resolve().parent.parent
+IT_DIR = REPO / ".toolkit" / "imagetracerjs"
+IT_LIB = IT_DIR / "imagetracer_v1.2.6.js"
+IT_URL = ("https://codeload.github.com/jankovicsandras/imagetracerjs/"
+          "tar.gz/refs/heads/master")
+BRIDGE = Path(__file__).resolve().parent / "imagetracer_bridge.js"
 
-# Each preset: `pre` = raster cleanup, `supersample`, `wasm` = options for the
-# vtracer 1.0 WASM engine (preferred), `trace` = fallback for the old 0.6 PyPI
-# engine when node/WASM isn't available.
 MODES = {
-    "finest": dict(
-        quant=64, merge_dist=28, median=3, supersample=2,
-        wasm=dict(hierarchical="cutout", mode="spline", simplify=2,
-                  filterSpeckle=8, maxColors=32, pathPrecision=2),
-        trace=dict(
-            colormode="color", hierarchical="stacked", mode="spline",
-            filter_speckle=8, color_precision=8, layer_difference=8,
-            corner_threshold=100, length_threshold=5.0, splice_threshold=60,
-            path_precision=3,
-        ),
-        help="vtracer 1.0 WASM: watershed-smooth beziers + curve simplification, 2x",
-    ),
-    "balanced": dict(
-        quant=64, merge_dist=28, median=3, supersample=1,
-        wasm=dict(hierarchical="cutout", mode="spline", simplify=1.5,
-                  filterSpeckle=4, maxColors=24, pathPrecision=2),
-        trace=dict(
-            colormode="color", hierarchical="stacked", mode="spline",
-            filter_speckle=4, color_precision=8, layer_difference=8,
-            corner_threshold=100, length_threshold=5.0, splice_threshold=60,
-            path_precision=3,
-        ),
-        help="same engine at native resolution; small smooth output",
-    ),
-    "compact": dict(
-        quant=24, merge_dist=0, median=5, supersample=1,
-        wasm=dict(hierarchical="cutout", mode="spline", simplify=2.5,
-                  filterSpeckle=12, maxColors=16, pathPrecision=1, optimize=1),
-        trace=dict(
-            colormode="color", hierarchical="stacked", mode="spline",
-            filter_speckle=8, color_precision=6, layer_difference=16,
-            corner_threshold=120, length_threshold=6.0, splice_threshold=70,
-            path_precision=2,
-        ),
-        help="posterized & tiny: few colors, aggressive simplification",
-    ),
-    "lineart": dict(
-        quant=0, merge_dist=0, median=0, supersample=2,
-        wasm=dict(clustering="bw", adaptive=True, mode="spline", simplify=1,
-                  filterSpeckle=4),
-        trace=dict(
-            colormode="binary", mode="spline",
-            filter_speckle=2, corner_threshold=100, length_threshold=5.0,
-            splice_threshold=60, path_precision=3,
-        ),
-        help="black & white line art / sketches (adaptive threshold)",
-    ),
+    "finest": dict(engine="imagetracer", supersample=2, quant=64, merge_dist=32,
+                   median=5, it=dict(ltres=2, qtres=2, pathomit=12, blurradius=0),
+                   help="smooth vector-art quality: merged palette + 2x flat supersample"),
+    "balanced": dict(engine="imagetracer", supersample=1, quant=64, merge_dist=32,
+                     median=3, it=dict(ltres=2, qtres=2, pathomit=8, blurradius=0),
+                     help="same cleanup at native resolution"),
+    "compact": dict(engine="imagetracer", supersample=1, quant=64, merge_dist=56,
+                    median=5, it=dict(ltres=3, qtres=3, pathomit=16, blurradius=0),
+                    help="posterized & tiny"),
+    "lineart": dict(engine="vtracer", supersample=2, quant=0, merge_dist=0, median=0,
+                    trace=dict(colormode="binary", mode="spline", filter_speckle=2,
+                               corner_threshold=100, length_threshold=5.0,
+                               splice_threshold=60, path_precision=3),
+                    help="black & white line art / sketches (uses --threshold)"),
 }
 
-# ---------------------------------------------------------------------------
-# Pipeline stages
-# ---------------------------------------------------------------------------
+# legacy vtracer color settings (fallback engine)
+VTRACER_COLOR = dict(colormode="color", hierarchical="stacked", mode="spline",
+                     filter_speckle=8, color_precision=8, layer_difference=8,
+                     corner_threshold=100, length_threshold=5.0, splice_threshold=60,
+                     path_precision=3)
+
+# ---------------------------------------------------------------- helpers
 
 def _flatten(img: Image.Image, bg: str) -> Image.Image:
-    """Composite RGBA onto a solid background ('auto' → white if alpha varies)."""
     if img.mode not in ("RGBA", "LA", "PA") and not (
-        img.mode == "P" and "transparency" in img.info
-    ):
+            img.mode == "P" and "transparency" in img.info):
         return img.convert("RGB")
     if bg == "auto":
         bg = "#ffffff"
@@ -153,12 +92,6 @@ def _flatten(img: Image.Image, bg: str) -> Image.Image:
 
 
 def _merged_palette(img: Image.Image, colors: int, merge_dist: int):
-    """Quantize, then collapse near-duplicate palette entries.
-
-    JPEG artifacts split one visual color into several close tones; tracing
-    keeps them as separate blotchy layers. Merging by RGB distance yields one
-    flat fill per visual color. Returns (flat RGB image, kept color count).
-    """
     q = img.quantize(colors=colors, method=Image.Quantize.MEDIANCUT,
                      dither=Image.Dither.NONE)
     pal = np.array(q.getpalette(), dtype=np.int64).reshape(-1, 3)
@@ -176,134 +109,121 @@ def _merged_palette(img: Image.Image, colors: int, merge_dist: int):
             keep.append(i)
         else:
             remap[i] = target
-    flat = pal[remap[arr]].astype(np.uint8)
-    return Image.fromarray(flat, "RGB"), len(keep)
+    return Image.fromarray(pal[remap[arr]].astype(np.uint8), "RGB"), len(keep)
 
 
-def _prepare(img: Image.Image, *, median: int, quant: int, merge_dist: int,
-             supersample: int, binarize: int | None) -> tuple[Image.Image, int]:
+def _prepare(img, *, median, quant, merge_dist, supersample, binarize):
     kept = 0
     if binarize is not None:
-        img = img.convert("L").point(
-            lambda v: 0 if v < binarize else 255).convert("RGB")
+        img = img.convert("L").point(lambda v: 0 if v < binarize else 255).convert("RGB")
     else:
-        if quant and quant > 0:
-            if merge_dist and merge_dist > 0:
-                img, kept = _merged_palette(img, quant, merge_dist)
-            else:
-                img = img.quantize(colors=quant, method=Image.Quantize.MEDIANCUT,
-                                   dither=Image.Dither.NONE).convert("RGB")
-                kept = quant
-        if median and median > 0:
+        if quant and quant > 0 and merge_dist and merge_dist > 0:
+            img, kept = _merged_palette(img, quant, merge_dist)
+        elif quant and quant > 0:
+            img = img.quantize(colors=quant, method=Image.Quantize.MEDIANCUT,
+                               dither=Image.Dither.NONE).convert("RGB")
+            kept = quant
+        if median:
             img = img.filter(ImageFilter.MedianFilter(median))
     if supersample and supersample > 1:
         w, h = img.size
-        # NEAREST on purpose: keeps fills flat (no AA gradients → no halos);
-        # the spline fitter smooths the staircase into curves afterwards.
         img = img.resize((w * supersample, h * supersample), Image.NEAREST)
     return img, kept
 
 
-_PATH_RE = re.compile(r'<path\s+d="([^"]+)"\s+fill="(#[0-9a-fA-F]+)"'
-                      r'(?:\s+transform="translate\(([-\d.]+),([-\d.]+)\)")?\s*/>')
-_NUM_RE = re.compile(r'[MCZ]|-?\d+(?:\.\d+)?')
+def _ensure_imagetracer() -> Path:
+    if IT_LIB.exists():
+        return IT_LIB
+    IT_DIR.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(IT_URL) as r:  # fixed github URL
+        data = r.read()
+    with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+        for m in tf.getmembers():
+            if m.name.endswith("imagetracer_v1.2.6.js"):
+                tf.extract(m, IT_DIR, filter="data")
+                (IT_DIR / m.name).rename(IT_LIB)
+                break
+    if not IT_LIB.exists():
+        raise RuntimeError("imagetracerjs bootstrap failed")
+    return IT_LIB
 
 
-def _clip_and_bake(body: str, w2: int, h2: int, scale: float) -> str:
-    """Clip every path to the canvas and bake translate+scale into coordinates.
+def _trace_imagetracer(img: Image.Image, opts: dict) -> str:
+    lib = _ensure_imagetracer()
+    w, h = img.size
+    o = dict(colorquantcycles=3, rightangleenhance=True, roundcoords=2,
+             layering=0, linefilter=False, strokewidth=1, mincolorratio=0,
+             colorsampling=0, viewbox=True, desc=False, **opts)
+    cols = np.unique(np.asarray(img).reshape(-1, 3), axis=0)
+    o["pal"] = [{"r": int(c[0]), "g": int(c[1]), "b": int(c[2]), "a": 255}
+                for c in cols]
+    with tempfile.TemporaryDirectory(prefix="vec-") as td:
+        raw = Path(td) / "in.raw"
+        raw.write_bytes(img.convert("RGBA").tobytes())
+        out = Path(td) / "out.svg"
+        subprocess.run(["node", str(BRIDGE), str(lib), str(raw), str(w), str(h),
+                        str(out), json.dumps(o)], check=True, capture_output=True)
+        return out.read_text()
 
-    Two compatibility fixes at once:
-      * High corner thresholds make splines overshoot the canvas; browsers hide
-        that by clipping to the viewBox but Photoshop/Illustrator previews show
-        the overflow. So all coordinates are clamped to the traced canvas and
-        the full-canvas background layer becomes a plain <rect>.
-      * The sub-pixel scale and per-path translates are multiplied straight
-        into the numbers, so the output contains NO transform attributes or
-        wrapper groups at all — every viewer renders it identically.
-    """
+
+# ------------------------------------------------------- generic bake & clip
+
+def _bake_paths(body: str, w2: int, h2: int, scale: float) -> str:
+    """Clamp every path to the canvas and bake the supersample scale into the
+    coordinates (supports M/L/Q/C/Z absolute commands — both engines)."""
+
     def fix(m: re.Match) -> str:
-        d, fill, txs, tys = m.group(1), m.group(2), m.group(3), m.group(4)
-        tx = float(txs) if txs else 0.0
-        ty = float(tys) if tys else 0.0
-        lo_x, hi_x = -tx, w2 - tx
-        lo_y, hi_y = -ty, h2 - ty
+        d, rest = m.group(1), m.group(2)
+        toks = re.findall(r"[MLQCZ]|-?\d+(?:\.\d+)?", d)
         res: list[str] = []
-        minx = miny = 1e18
-        maxx = maxy = -1e18
+        bbox = [1e18, 1e18, -1e18, -1e18]
         n = 0
-        for t in _NUM_RE.findall(d):
+        for t in toks:
             if t.isalpha():
-                res.append(t)
                 n = 0
+                res.append(t)
                 continue
             v = float(t)
-            if n % 2 == 0:  # x coordinate
-                v = min(max(v, lo_x), hi_x) + tx
-                minx, maxx = min(minx, v), max(maxx, v)
-            else:           # y coordinate
-                v = min(max(v, lo_y), hi_y) + ty
-                miny, maxy = min(miny, v), max(maxy, v)
-            b = v * scale
-            res.append(f"{b:.2f}".rstrip("0").rstrip(".") or "0")
+            if n % 2 == 0:
+                v = min(max(v, 0), w2)
+                bbox[0], bbox[2] = min(bbox[0], v), max(bbox[2], v)
+            else:
+                v = min(max(v, 0), h2)
+                bbox[1], bbox[3] = min(bbox[1], v), max(bbox[3], v)
+            res.append(f"{v * scale:.2f}".rstrip("0").rstrip(".") or "0")
             n += 1
-        # full-canvas layer → plain rect (its spline corners overshoot wildly)
-        if minx <= 1 and miny <= 1 and maxx >= w2 - 1 and maxy >= h2 - 1:
-            return (f'<rect x="0" y="0" width="{w2 * scale:g}" '
-                    f'height="{h2 * scale:g}" fill="{fill}"/>')
-        return f'<path d="{" ".join(res)}" fill="{fill}"/>'
+        if bbox[0] <= 1 and bbox[1] <= 1 and bbox[2] >= w2 - 1 and bbox[3] >= h2 - 1:
+            fill = re.search(r'fill="([^"]+)"', rest)
+            fc = fill.group(1) if fill else "#000"
+            return (f'<path d="M0,0 L{w2 * scale:g},0 L{w2 * scale:g},'
+                    f'{h2 * scale:g} L0,{h2 * scale:g} Z" fill="{fc}"{rest}/>')
+        return f'<path d="{" ".join(res)}"{rest}/>'
 
-    return _PATH_RE.sub(fix, body)
-
-
-def _wasm_engine():
-    """Locate node + the vtracer 1.0 WASM package, else None."""
-    node = shutil.which("node")
-    if not node:
-        return None
-    repo = Path(__file__).resolve().parent.parent
-    for base in (repo / ".toolkit" / "svg-render" / "node_modules",
-                 repo / "node_modules"):
-        if (base / "@visioncortex" / "vtracer").is_dir():
-            return node, base
-    return None
+    return re.sub(r'<path d="([^"]+)"([^>]*)/>', fix, body)
 
 
-def _trace_wasm(engine, inp: Path, out: Path, opts: dict):
-    node, base = engine
-    env = dict(os.environ, NODE_PATH=str(base))
-    wrapper = Path(__file__).resolve().parent / "vt_wasm.js"
-    subprocess.run([node, str(wrapper), str(inp), str(out), json.dumps(opts)],
-                   env=env, check=True, capture_output=True)
-
-
-def _finish_svg(raw: str, width: int, height: int, scale: float,
-                meta: str, bake: bool = True) -> str:
-    """Normalize header. bake=True: clip + bake coords (0.6 engine output);
-    bake=False: plain scale wrapper (1.0 WASM output has no overshoot)."""
+def _finish_svg(raw: str, width: int, height: int, scale: float, meta: str) -> str:
     raw = re.sub(r"<\?xml[^>]*\?>\s*", "", raw)
     raw = re.sub(r"<!--.*?-->\s*", "", raw, flags=re.S)
     body = re.sub(r"<svg[^>]*>", "", raw, count=1).replace("</svg>", "")
-    if bake:
-        w2, h2 = round(width / scale), round(height / scale)
-        body = _clip_and_bake(body, w2, h2, scale)
-    elif scale != 1:
-        body = f'<g transform="scale({scale:g})">{body}</g>'
+    w2, h2 = round(width / scale), round(height / scale)
+    body = _bake_paths(body, w2, h2, scale)
     head = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
-            f'height="{height}" viewBox="0 0 {width} {height}" '
-            f'overflow="hidden">')
+            f'height="{height}" viewBox="0 0 {width} {height}" overflow="hidden">')
     return f'{head}\n<!-- {meta} -->\n{body}</svg>\n'
 
 
+# ------------------------------------------------------------------ API
+
 def vectorize(input_path, output_path=None, *, mode: str = "finest",
-              palette: int | None = None, merge_dist: int | None = None,
-              supersample: int | None = None, bg: str = "auto",
-              threshold: int = 127, quiet: bool = False) -> dict:
-    """Vectorize `input_path` into a clean SVG. Returns run stats."""
+              engine: str | None = None, palette: int | None = None,
+              merge_dist: int | None = None, supersample: int | None = None,
+              bg: str = "auto", threshold: int = 127, quiet: bool = False) -> dict:
     if mode not in MODES:
         raise ValueError(f"unknown mode '{mode}'; choose from {sorted(MODES)}")
     preset = MODES[mode]
+    eng = engine or preset["engine"]
     t0 = time.time()
-
     input_path = Path(input_path)
     img = Image.open(input_path)
     width, height = img.size
@@ -315,29 +235,29 @@ def vectorize(input_path, output_path=None, *, mode: str = "finest",
 
     work = _flatten(img, bg)
     work, kept = _prepare(work, median=preset["median"], quant=quant,
-                          merge_dist=md, supersample=ss, binarize=binarize)
+                          merge_dist=md if eng == "imagetracer" else 0,
+                          supersample=ss, binarize=binarize)
 
-    engine = _wasm_engine()
-    if engine is None and vtracer is None:
-        sys.exit("no engine available: pip install vtracer  OR  "
-                 "npm install @visioncortex/vtracer")
-    engine_name = "vtracer-1.0-wasm" if engine else "vtracer-0.6-py"
-    with tempfile.TemporaryDirectory(prefix="vectorize-") as td:
-        tmp_png = Path(td) / "work.png"
-        tmp_svg = Path(td) / "work.svg"
-        work.save(tmp_png)
-        if engine:
-            _trace_wasm(engine, tmp_png, tmp_svg, preset["wasm"])
-        else:
-            vtracer.convert_image_to_svg_py(str(tmp_png), str(tmp_svg),
-                                            **preset["trace"])
-        raw = tmp_svg.read_text()
+    if eng == "imagetracer" and mode != "lineart":
+        raw_svg = _trace_imagetracer(work, preset.get("it", {}))
+    else:  # vtracer
+        try:
+            import vtracer
+        except ImportError:
+            sys.exit("vtracer engine requires: pip install vtracer")
+        with tempfile.TemporaryDirectory(prefix="vec-") as td:
+            p = Path(td) / "in.png"
+            o = Path(td) / "o.svg"
+            work.save(p)
+            vtracer.convert_image_to_svg_py(
+                str(p), str(o),
+                **(preset["trace"] if mode == "lineart" else VTRACER_COLOR))
+            raw_svg = o.read_text()
 
     scale = round(1 / ss, 6) if ss > 1 else 1
-    meta = (f"vectorized by InfiniteTalk tools/vectorize.py · engine: "
-            f"{engine_name} · mode={mode} supersample={ss}x "
-            f"colors={kept or 'n/a'}")
-    svg = _finish_svg(raw, width, height, scale, meta, bake=(engine is None))
+    meta = (f"vectorized by InfiniteTalk tools/vectorize.py · engine: {eng} · "
+            f"mode={mode} supersample={ss}x colors={kept or 'n/a'}")
+    svg = _finish_svg(raw_svg, width, height, scale, meta)
 
     if output_path is None:
         output_path = input_path.with_suffix(".svg")
@@ -345,54 +265,41 @@ def vectorize(input_path, output_path=None, *, mode: str = "finest",
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(svg)
 
-    stats = {
-        "input": str(input_path), "output": str(output_path), "mode": mode,
-        "size": (width, height), "supersample": ss, "colors": kept,
-        "paths": svg.count("<path"),
-        "fills": len(set(re.findall(r'fill="(#[0-9a-fA-F]+)"', svg))),
-        "bytes": output_path.stat().st_size, "seconds": round(time.time() - t0, 2),
-    }
+    stats = {"input": str(input_path), "output": str(output_path), "mode": mode,
+             "engine": eng, "size": (width, height), "supersample": ss,
+             "colors": kept, "paths": svg.count("<path"),
+             "bytes": output_path.stat().st_size,
+             "seconds": round(time.time() - t0, 2)}
     if not quiet:
-        print(f"[vectorize:{mode}] {input_path.name} → {output_path.name}  "
+        print(f"[vectorize:{mode}/{eng}] {input_path.name} → {output_path.name}  "
               f"{width}×{height} @ {ss}x · {stats['paths']:,} paths · "
-              f"{stats['fills']} fills · {stats['bytes']/1024:.0f} KB · "
-              f"{stats['seconds']}s")
+              f"{stats['bytes'] / 1024:.0f} KB · {stats['seconds']}s")
     return stats
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Vectorize raster images into clean smooth SVGs (vtracer engine).")
-    ap.add_argument("input", help="input raster image (png/jpg/webp/...)")
-    ap.add_argument("output", nargs="?", help="output .svg (default: input with .svg)")
-    ap.add_argument("--mode", default="finest", choices=sorted(MODES),
-                    help="quality preset (default: finest)")
-    ap.add_argument("--palette", type=int, default=None,
-                    help="initial quantization colors before merging (default 64)")
-    ap.add_argument("--merge-dist", type=int, default=None,
-                    help="palette merge RGB distance, 0 = off (default 28)")
-    ap.add_argument("--supersample", type=int, default=None,
-                    help="override trace resolution multiplier")
-    ap.add_argument("--bg", default="auto",
-                    help="flatten background for transparent images (auto|#rrggbb)")
-    ap.add_argument("--threshold", type=int, default=127,
-                    help="lineart binarization threshold (0..255)")
-    ap.add_argument("--list-modes", action="store_true", help="describe presets and exit")
+        description="Vectorize raster images into clean smooth SVGs.")
+    ap.add_argument("input")
+    ap.add_argument("output", nargs="?")
+    ap.add_argument("--mode", default="finest", choices=sorted(MODES))
+    ap.add_argument("--engine", choices=["imagetracer", "vtracer"],
+                    help="override tracing engine")
+    ap.add_argument("--palette", type=int)
+    ap.add_argument("--merge-dist", type=int)
+    ap.add_argument("--supersample", type=int)
+    ap.add_argument("--bg", default="auto")
+    ap.add_argument("--threshold", type=int, default=127)
+    ap.add_argument("--list-modes", action="store_true")
     ap.add_argument("--quiet", action="store_true")
-    args = ap.parse_args(argv)
-
-    if args.list_modes:
+    a = ap.parse_args(argv)
+    if a.list_modes:
         for name, p in MODES.items():
-            print(f"{name:10s} {p['help']}")
+            print(f"{name:10s} [{p['engine']}] {p['help']}")
         return 0
-
-    vectorize(args.input, args.output, mode=args.mode, palette=args.palette,
-              merge_dist=args.merge_dist, supersample=args.supersample,
-              bg=args.bg, threshold=args.threshold, quiet=args.quiet)
+    vectorize(a.input, a.output, mode=a.mode, engine=a.engine, palette=a.palette,
+              merge_dist=a.merge_dist, supersample=a.supersample, bg=a.bg,
+              threshold=a.threshold, quiet=a.quiet)
     return 0
 
 
