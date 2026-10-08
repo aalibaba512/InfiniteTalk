@@ -189,14 +189,64 @@ def _prepare(img: Image.Image, *, median: int, quant: int, merge_dist: int,
     return img, kept
 
 
+_PATH_RE = re.compile(r'<path\s+d="([^"]+)"\s+fill="(#[0-9a-fA-F]+)"'
+                      r'(?:\s+transform="translate\(([-\d.]+),([-\d.]+)\)")?\s*/>')
+_NUM_RE = re.compile(r'[MCZ]|-?\d+(?:\.\d+)?')
+
+
+def _clamp_paths(body: str, w2: int, h2: int) -> str:
+    """Clip every path's geometry to the canvas.
+
+    High corner thresholds make splines overshoot the canvas (the background
+    layer becomes a giant blob; edge shapes bulge past the border). Browsers
+    hide that by clipping to the viewBox, but Photoshop/Illustrator previews
+    show overflow. So we clamp coordinates numerically and replace the
+    full-canvas background layer with a plain <rect>.
+    """
+    def fix(m: re.Match) -> str:
+        d, fill, txs, tys = m.group(1), m.group(2), m.group(3), m.group(4)
+        tx = float(txs) if txs else 0.0
+        ty = float(tys) if tys else 0.0
+        lo_x, hi_x = -tx, w2 - tx
+        lo_y, hi_y = -ty, h2 - ty
+        res: list[str] = []
+        minx = miny = 1e18
+        maxx = maxy = -1e18
+        n = 0
+        for t in _NUM_RE.findall(d):
+            if t.isalpha():
+                res.append(t)
+                n = 0
+                continue
+            v = float(t)
+            if n % 2 == 0:  # x coordinate
+                v = min(max(v, lo_x), hi_x)
+                minx, maxx = min(minx, v + tx), max(maxx, v + tx)
+            else:           # y coordinate
+                v = min(max(v, lo_y), hi_y)
+                miny, maxy = min(miny, v + ty), max(maxy, v + ty)
+            res.append(f"{v:g}")
+            n += 1
+        # full-canvas layer → plain rect (its spline corners overshoot wildly)
+        if minx <= 1 and miny <= 1 and maxx >= w2 - 1 and maxy >= h2 - 1:
+            return f'<rect x="0" y="0" width="{w2}" height="{h2}" fill="{fill}"/>'
+        tr = f' transform="translate({txs},{tys})"' if txs else ''
+        return f'<path d="{" ".join(res)}" fill="{fill}"{tr}/>'
+
+    return _PATH_RE.sub(fix, body)
+
+
 def _finish_svg(raw: str, width: int, height: int, scale: float,
                 meta: str) -> str:
-    """Strip vtracer's prologue, normalize the header, wrap sub-pixel scale."""
+    """Strip vtracer's prologue, clip geometry, normalize header."""
     raw = re.sub(r"<\?xml[^>]*\?>\s*", "", raw)
     raw = re.sub(r"<!--.*?-->\s*", "", raw, flags=re.S)
     body = re.sub(r"<svg[^>]*>", "", raw, count=1).replace("</svg>", "")
+    w2, h2 = round(width / scale) if scale else width, round(height / scale) if scale else height
+    body = _clamp_paths(body, w2, h2)
     head = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
-            f'height="{height}" viewBox="0 0 {width} {height}">')
+            f'height="{height}" viewBox="0 0 {width} {height}" '
+            f'overflow="hidden">')
     if scale != 1:
         body = f'<g transform="scale({scale:g})">{body}</g>'
     return f'{head}\n<!-- {meta} -->\n{body}</svg>\n'
