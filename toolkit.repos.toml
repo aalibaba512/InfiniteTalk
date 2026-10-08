@@ -193,7 +193,7 @@ tags = ["awesome", "meta"]
 use = "Curated list of video frameworks, libraries, specs — overflow directory."
 license = "List"
 
-# --------------------------------------------------------------- design (12)
+# --------------------------------------------------------------- design (14)
 
 [[repo]]
 name = "penpot"
@@ -234,6 +234,22 @@ url = "https://github.com/inkscape/inkscape"
 tags = ["vector", "svg"]
 use = "Vector graphics / logo / SVG editing."
 license = "GPL-3.0 / GPL-2.0+"
+
+[[repo]]
+name = "vtracer"
+category = "design"
+url = "https://github.com/visioncortex/vtracer"
+tags = ["core", "vectorize", "raster-to-svg", "python"]
+use = "Best free raster→SVG tracer (MIT). Engine behind tools/vectorize.py; install via `pip install vtracer`. Presets tuned for finest-shape output (see tools/vectorize.py)."
+license = "MIT"
+
+[[repo]]
+name = "diffvg"
+category = "design"
+url = "https://github.com/BachiLi/diffvg"
+tags = ["differentiable", "vector-optimization", "research"]
+use = "Differentiable SVG rasterizer for gradient-based/AI vector optimization. Research-grade; needs CUDA build — vtracer is the practical default."
+license = "Apache-2.0"
 
 [[repo]]
 name = "krita"

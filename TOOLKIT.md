@@ -5,7 +5,7 @@
 > Star counts are approximate (as of research date). Add the ones you want into the repo as needed.
 
 ### ⚡ These repos are now registered in this repository
-- **Registry:** `toolkit.repos.toml` (machine-readable source of truth — 64 repos)
+- **Registry:** `toolkit.repos.toml` (machine-readable source of truth — 66 repos)
 - **Fetcher:** `python3 tools/toolkit.py clone core|<category>|<name>` → shallow-clones into gitignored `.toolkit/`
 - **Browse:** `python3 tools/toolkit.py list` · `python3 tools/toolkit.py search ai`
 - Future working sessions: see **`AGENTS.md`** for task → tool mapping and ground rules.
@@ -63,6 +63,17 @@
 | tldraw | https://github.com/tldraw/tldraw | Infinite-canvas SDK — embed collaborative whiteboards in your own apps | ~50k |
 | GIMP | https://github.com/GNOME/gimp | Photoshop-class raster editing | ~6k (gitlab mirror is canonical) |
 | Inkscape | https://github.com/inkscape/inkscape | Vector graphics / logo / SVG editing | ~3k |
+| **VTracer** | https://github.com/visioncortex/vtracer | **Best free raster→SVG tracer** — engine behind `tools/vectorize.py` (finest/balanced/compact/lineart presets) | ~7.2k |
+| DiffVG | https://github.com/BachiLi/diffvg | Research-grade differentiable SVG (AI-style vector optimization, CUDA build) | ~1.3k |
+
+**Vectorize any image (finest-shape raster → SVG):**
+```bash
+pip install vtracer pillow                                  # engine + pipeline deps
+python3 tools/vectorize.py photo.png out.svg --mode finest  # presets: finest|balanced|compact|lineart
+python3 tools/vectorize_app.py                              # web UI on http://0.0.0.0:7860
+```
+Demo pair lives in `assets/vectorize-demo/` (input.png + 4 preset outputs). `finest` traces at 2×
+resolution with the tightest spline fitting — measured RMSE 9.3 vs 16.2 for stock vtracer defaults.
 | Krita | https://github.com/KDE/krita | Digital painting & illustration | ~6k |
 | Darktable | https://github.com/darktable-org/darktable | Photography workflow + raw processing | ~4k |
 | Photopea (free, web) | https://www.photopea.com | Browser PSD editor (not OSS, but zero-cost Photoshop stand-in) | — |

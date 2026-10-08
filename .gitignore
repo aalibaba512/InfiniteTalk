@@ -5,3 +5,6 @@
 __pycache__/
 *.py[cod]
 .venv/
+
+# vectorize web UI uploads (Flask instance path)
+instance/

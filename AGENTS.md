@@ -8,7 +8,7 @@ reuse across projects.
 
 | File | Purpose |
 |---|---|
-| `toolkit.repos.toml` | **Source of truth.** Machine-readable registry of all 64 curated repos (name, URL, category, tags, use-case, license). |
+| `toolkit.repos.toml` | **Source of truth.** Machine-readable registry of all 66 curated repos (name, URL, category, tags, use-case, license). |
 | `TOOLKIT.md` | Human-readable catalog with descriptions and GitHub Explore links. |
 | `tools/toolkit.py` | CLI to list / search / shallow-clone / update any of them. |
 
@@ -18,6 +18,7 @@ reuse across projects.
 - **Automate edits in code** → `moviepy` (Python), `remotion` (React templating), `editly` (declarative CLI), `auto-editor` (silence removal), `pyscenedetect` (scene cuts)
 - **AI video / talking-head extras** → `liveportrait`, `autoclip`, `opencreator`, `backgroundremover`
 - **Design assets & UI** → `penpot` (Figma alt), `excalidraw` (mockups), `gimp`/`inkscape`/`krita`, `ui-shadcn` + `bulma` (web UI)
+- **Vectorize images (raster → SVG, finest shapes)** → `tools/vectorize.py` (vtracer engine; presets `finest`/`balanced`/`compact`/`lineart`; web UI: `python3 tools/vectorize_app.py`)
 - **Publish & grow (digital media strategy)** → `postiz` (scheduling hub), `ghost`/`listmonk` (content/email), `plausible`/`umami`/`matomo` (analytics), `mautic` (automation), `twenty` (CRM), `n8n` (glue)
 - **Strategy frameworks with AI agents** → `latticework`, `marketingskills`
 - **Scrape data** → `firecrawl` or `crawl4ai` (LLM-ready output), `scrapy` (production Python crawls), `scrapling` (stealth/adaptive), `playwright` (JS-heavy sites), `browser-use` (agent-driven), `maxun` (no-code), `mediacrawler` (social platforms — **research/ToS caution**), `google-maps-scraper` (local leads)
