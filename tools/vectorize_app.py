@@ -81,7 +81,8 @@ patched pipeline: supersampling + tuned spline fitting</span></header>
 <div class="pane" id="p-vec"><h2>Vectorized (SVG)</h2><div class="stage"><img id="vec"></div></div>
 </div>
 <footer>tools/vectorize.py — InfiniteTalk toolkit · presets:
-finest (RMSE 9.3) · balanced (12.2) · compact (16.2) vs stock tracing</footer>
+finest (smooth béziers, merged palette, 2× trace) · balanced (native res) ·
+compact (posterized) · lineart (B&amp;W)</footer>
 <script>
 const MODES = __MODES__;
 const $=id=>document.getElementById(id);

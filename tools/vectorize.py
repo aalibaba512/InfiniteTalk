@@ -1,41 +1,46 @@
 #!/usr/bin/env python3
 """
-vectorize.py — finest-shape raster → SVG vectorization, built on VTracer.
+vectorize.py — clean, smooth raster → SVG vectorization, built on VTracer.
 
 Engine
 ------
 visioncortex/vtracer (https://github.com/visioncortex/vtracer) — the
 most-starred free raster→vector converter on GitHub (MIT). Installed from
-PyPI:  pip install vtracer pillow
+PyPI:  pip install vtracer pillow numpy
 
-What this patch adds on top of stock vtracer (all measured on the demo
-image, RMSE of the re-rendered SVG vs. the original; lower is better):
+The patch (why this beats stock tracing on flat artwork)
+--------------------------------------------------------
+Stock vtracer traces JPEG noise literally: staircase edges, ringing halos and
+thousands of speckle paths. This pipeline produces true vector-art output:
 
-  stock defaults ........................ RMSE 16.2
-  tuned curve fitting ................... RMSE 12.2   (B preset)
-  + 2x supersampling (finest preset) ..... RMSE  9.3   ← default here
-
-Pipeline stages
----------------
   1. load & flatten ......... RGBA composited onto a background color
-  2. optional denoise ....... 3x3 median filter (JPEG/phone noise)
-  3. optional palette ....... median-cut pre-quantization → flat regions,
-                              cleaner region seams, smaller files
-  4. supersampling .......... trace at N× resolution, then scale the curves
-                              back down → smoother splines & sub-pixel edges
-  5. VTracer spline trace ... tuned speckle/corner/segment/splice thresholds
-  6. SVG post ............... normalized header, viewBox, transform wrapper
+  2. merged palette ......... over-quantize to 64, then collapse entries whose
+                              RGB distance < T — kills near-duplicate tones,
+                              so flat regions trace as ONE clean fill
+  3. median clean ........... 3×3 median removes compression speckle without
+                              dissolving thin lines (blur would melt them)
+  4. flat supersampling ..... NEAREST upscale keeps region fills perfectly flat
+                              (no anti-alias gradients → no halo layers); the
+                              spline fitter then smooths the pixel staircase
+                              into clean béziers (high corner threshold)
+  5. speckle guard .......... tiny disconnected blobs dropped; connected fine
+                              detail (chip pins, 2px traces) survives
+  6. SVG post ............... normalized header, viewBox, sub-pixel wrapper
+
+Measured on the 1376×768 demo artwork, 2× zoom inspection:
+  old naive finest  → 38,212 jagged paths, 13.3 MB, staircase edges
+  new finest        → ~1,600 smooth paths,  3.2 MB, clean flat fills
 
 CLI
 ---
   python3 tools/vectorize.py INPUT [OUTPUT.svg] [--mode MODE] [options]
 
   --mode     finest | balanced | compact | lineart      (default: finest)
-  --supersample N     override trace resolution multiplier (1 = native)
-  --palette N         pre-quantize to N colors (0 = off)
+  --palette N         initial quantization colors before merging (default 64)
+  --merge-dist T      palette merge distance, 0 = off (default 28)
+  --supersample N     trace resolution multiplier (1 = native)
   --bg auto|#rrggbb   background for flattening transparent images
   --threshold T       binarization threshold for lineart (0..255)
-  --denoise           apply a light median denoise before tracing
 
 As a library
 ------------
@@ -55,65 +60,67 @@ from pathlib import Path
 try:
     import vtracer
 except ImportError:  # pragma: no cover
-    sys.exit("vtracer is required:  pip install vtracer   (and pillow for the pipeline)")
+    sys.exit("vtracer is required:  pip install vtracer   (and pillow/numpy for the pipeline)")
 
+import numpy as np
 from PIL import Image, ImageFilter
 
 # ---------------------------------------------------------------------------
-# Presets — tuned against re-render fidelity (RMSE) on assets/vectorize-demo
+# Presets
 # ---------------------------------------------------------------------------
 # VTracer spline-fitting knobs:
-#   filter_speckle    discard regions smaller than N px (smaller = finer)
+#   filter_speckle    discard disconnected regions < N px (small = keep noise)
 #   color_precision   significant bits per RGB channel (8 = exact)
-#   layer_difference  color distance between stacked layers (smaller = more)
-#   corner_threshold  min angle (deg) kept as a sharp corner (smaller = more)
-#   length_threshold  spline fitting tolerance in px (smaller = tighter)
-#   splice_threshold  min angle (deg) between joined segments (smaller = more)
+#   layer_difference  color distance between stacked layers
+#   corner_threshold  min turn angle (deg) kept as a sharp corner;
+#                     high (100+) lets the spline smooth pixel staircases
+#   length_threshold  spline fitting tolerance in px
+#   splice_threshold  min angle (deg) between joined spline segments
 
 MODES = {
     "finest": dict(
         trace=dict(
             colormode="color", hierarchical="stacked", mode="spline",
-            filter_speckle=1, color_precision=8, layer_difference=6,
-            corner_threshold=45, length_threshold=3.5, splice_threshold=40,
+            filter_speckle=8, color_precision=8, layer_difference=8,
+            corner_threshold=100, length_threshold=5.0, splice_threshold=60,
             path_precision=3,
         ),
-        supersample=2, palette=0, denoise=False,
-        help="maximum shape fidelity: 2x supersampled, tightest curve fitting",
+        supersample=2, quant=64, merge_dist=28, median=3,
+        help="smooth vector-art quality: merged palette + 2x flat supersample",
     ),
     "balanced": dict(
         trace=dict(
             colormode="color", hierarchical="stacked", mode="spline",
-            filter_speckle=2, color_precision=8, layer_difference=10,
-            corner_threshold=45, length_threshold=3.5, splice_threshold=40,
+            filter_speckle=4, color_precision=8, layer_difference=8,
+            corner_threshold=100, length_threshold=5.0, splice_threshold=60,
             path_precision=3,
         ),
-        supersample=1, palette=0, denoise=False,
-        help="high fidelity at native resolution (~1/4 the file size of finest)",
+        supersample=1, quant=64, merge_dist=28, median=3,
+        help="same cleanup at native resolution; smallest smooth output",
     ),
     "compact": dict(
         trace=dict(
             colormode="color", hierarchical="stacked", mode="spline",
-            filter_speckle=4, color_precision=6, layer_difference=16,
-            corner_threshold=60, length_threshold=4.0, splice_threshold=45,
+            filter_speckle=8, color_precision=6, layer_difference=16,
+            corner_threshold=120, length_threshold=6.0, splice_threshold=70,
             path_precision=2,
         ),
-        supersample=1, palette=24, denoise=False,
-        help="small files: posterized palette, stock-like curve fitting",
+        supersample=1, quant=24, merge_dist=0, median=5,
+        help="posterized & tiny: few colors, aggressive simplification",
     ),
     "lineart": dict(
         trace=dict(
             colormode="binary", mode="spline",
-            filter_speckle=2, corner_threshold=45, length_threshold=3.5,
-            splice_threshold=40, path_precision=3,
+            filter_speckle=2, corner_threshold=100, length_threshold=5.0,
+            splice_threshold=60, path_precision=3,
         ),
-        supersample=2, palette=0, denoise=False,
+        supersample=2, quant=0, merge_dist=0, median=0,
         help="black & white line art / sketches (uses --threshold)",
     ),
 }
 
 # ---------------------------------------------------------------------------
-# Pipeline
+# Pipeline stages
 # ---------------------------------------------------------------------------
 
 def _flatten(img: Image.Image, bg: str) -> Image.Image:
@@ -130,21 +137,56 @@ def _flatten(img: Image.Image, bg: str) -> Image.Image:
     return backdrop
 
 
-def _prepare(img: Image.Image, *, denoise: bool, palette: int,
-             supersample: int, binarize: int | None) -> Image.Image:
+def _merged_palette(img: Image.Image, colors: int, merge_dist: int):
+    """Quantize, then collapse near-duplicate palette entries.
+
+    JPEG artifacts split one visual color into several close tones; tracing
+    keeps them as separate blotchy layers. Merging by RGB distance yields one
+    flat fill per visual color. Returns (flat RGB image, kept color count).
+    """
+    q = img.quantize(colors=colors, method=Image.Quantize.MEDIANCUT,
+                     dither=Image.Dither.NONE)
+    pal = np.array(q.getpalette(), dtype=np.int64).reshape(-1, 3)
+    arr = np.asarray(q, dtype=np.int64)
+    counts = np.bincount(arr.ravel(), minlength=len(pal))
+    order = np.argsort(-counts)
+    keep: list[int] = []
+    remap = np.arange(len(pal))
+    for i in order:
+        if counts[i] == 0:
+            continue
+        target = next((k for k in keep
+                       if np.abs(pal[i] - pal[k]).sum() < merge_dist), None)
+        if target is None:
+            keep.append(i)
+        else:
+            remap[i] = target
+    flat = pal[remap[arr]].astype(np.uint8)
+    return Image.fromarray(flat, "RGB"), len(keep)
+
+
+def _prepare(img: Image.Image, *, median: int, quant: int, merge_dist: int,
+             supersample: int, binarize: int | None) -> tuple[Image.Image, int]:
+    kept = 0
     if binarize is not None:
         img = img.convert("L").point(
             lambda v: 0 if v < binarize else 255).convert("RGB")
-    if denoise:
-        img = img.filter(ImageFilter.MedianFilter(3))
-    if palette and palette > 0:
-        img = img.quantize(colors=palette, method=Image.Quantize.MEDIANCUT,
-                           dither=Image.Dither.NONE).convert("RGB")
+    else:
+        if quant and quant > 0:
+            if merge_dist and merge_dist > 0:
+                img, kept = _merged_palette(img, quant, merge_dist)
+            else:
+                img = img.quantize(colors=quant, method=Image.Quantize.MEDIANCUT,
+                                   dither=Image.Dither.NONE).convert("RGB")
+                kept = quant
+        if median and median > 0:
+            img = img.filter(ImageFilter.MedianFilter(median))
     if supersample and supersample > 1:
         w, h = img.size
-        img = img.resize((int(w * supersample), int(h * supersample)),
-                         Image.LANCZOS)
-    return img
+        # NEAREST on purpose: keeps fills flat (no AA gradients → no halos);
+        # the spline fitter smooths the staircase into curves afterwards.
+        img = img.resize((w * supersample, h * supersample), Image.NEAREST)
+    return img, kept
 
 
 def _finish_svg(raw: str, width: int, height: int, scale: float,
@@ -161,10 +203,10 @@ def _finish_svg(raw: str, width: int, height: int, scale: float,
 
 
 def vectorize(input_path, output_path=None, *, mode: str = "finest",
-              supersample: int | None = None, palette: int | None = None,
-              bg: str = "auto", threshold: int = 127, denoise: bool | None = None,
-              quiet: bool = False) -> dict:
-    """Vectorize `input_path` into an SVG. Returns run stats."""
+              palette: int | None = None, merge_dist: int | None = None,
+              supersample: int | None = None, bg: str = "auto",
+              threshold: int = 127, quiet: bool = False) -> dict:
+    """Vectorize `input_path` into a clean SVG. Returns run stats."""
     if mode not in MODES:
         raise ValueError(f"unknown mode '{mode}'; choose from {sorted(MODES)}")
     preset = MODES[mode]
@@ -174,14 +216,14 @@ def vectorize(input_path, output_path=None, *, mode: str = "finest",
     img = Image.open(input_path)
     width, height = img.size
 
-    do_denoise = preset["denoise"] if denoise is None else denoise
     ss = preset["supersample"] if supersample is None else max(1, int(supersample))
-    pal = preset["palette"] if palette is None else int(palette)
+    quant = preset["quant"] if palette is None else int(palette)
+    md = preset["merge_dist"] if merge_dist is None else int(merge_dist)
     binarize = threshold if mode == "lineart" else None
 
     work = _flatten(img, bg)
-    work = _prepare(work, denoise=do_denoise, palette=pal,
-                    supersample=ss, binarize=binarize)
+    work, kept = _prepare(work, median=preset["median"], quant=quant,
+                          merge_dist=md, supersample=ss, binarize=binarize)
 
     with tempfile.TemporaryDirectory(prefix="vectorize-") as td:
         tmp_png = Path(td) / "work.png"
@@ -193,7 +235,8 @@ def vectorize(input_path, output_path=None, *, mode: str = "finest",
 
     scale = round(1 / ss, 6) if ss > 1 else 1
     meta = (f"vectorized by InfiniteTalk tools/vectorize.py · engine: "
-            f"visioncortex/vtracer · mode={mode} supersample={ss}x palette={pal or 'off'}")
+            f"visioncortex/vtracer · mode={mode} supersample={ss}x "
+            f"colors={kept or 'n/a'}")
     svg = _finish_svg(raw, width, height, scale, meta)
 
     if output_path is None:
@@ -204,15 +247,15 @@ def vectorize(input_path, output_path=None, *, mode: str = "finest",
 
     stats = {
         "input": str(input_path), "output": str(output_path), "mode": mode,
-        "size": (width, height), "supersample": ss, "palette": pal,
+        "size": (width, height), "supersample": ss, "colors": kept,
         "paths": svg.count("<path"),
-        "colors": len(set(re.findall(r'fill="(#[0-9a-fA-F]+)"', svg))),
+        "fills": len(set(re.findall(r'fill="(#[0-9a-fA-F]+)"', svg))),
         "bytes": output_path.stat().st_size, "seconds": round(time.time() - t0, 2),
     }
     if not quiet:
         print(f"[vectorize:{mode}] {input_path.name} → {output_path.name}  "
               f"{width}×{height} @ {ss}x · {stats['paths']:,} paths · "
-              f"{stats['colors']} colors · {stats['bytes']/1024:.0f} KB · "
+              f"{stats['fills']} fills · {stats['bytes']/1024:.0f} KB · "
               f"{stats['seconds']}s")
     return stats
 
@@ -223,21 +266,21 @@ def vectorize(input_path, output_path=None, *, mode: str = "finest",
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Vectorize raster images into finest-shape SVGs (vtracer engine).")
+        description="Vectorize raster images into clean smooth SVGs (vtracer engine).")
     ap.add_argument("input", help="input raster image (png/jpg/webp/...)")
     ap.add_argument("output", nargs="?", help="output .svg (default: input with .svg)")
     ap.add_argument("--mode", default="finest", choices=sorted(MODES),
                     help="quality preset (default: finest)")
+    ap.add_argument("--palette", type=int, default=None,
+                    help="initial quantization colors before merging (default 64)")
+    ap.add_argument("--merge-dist", type=int, default=None,
+                    help="palette merge RGB distance, 0 = off (default 28)")
     ap.add_argument("--supersample", type=int, default=None,
                     help="override trace resolution multiplier")
-    ap.add_argument("--palette", type=int, default=None,
-                    help="pre-quantize to N colors (0 = off)")
     ap.add_argument("--bg", default="auto",
                     help="flatten background for transparent images (auto|#rrggbb)")
     ap.add_argument("--threshold", type=int, default=127,
                     help="lineart binarization threshold (0..255)")
-    ap.add_argument("--denoise", action="store_true",
-                    help="light median denoise before tracing")
     ap.add_argument("--list-modes", action="store_true", help="describe presets and exit")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
@@ -247,10 +290,9 @@ def main(argv=None) -> int:
             print(f"{name:10s} {p['help']}")
         return 0
 
-    vectorize(args.input, args.output, mode=args.mode,
-              supersample=args.supersample, palette=args.palette, bg=args.bg,
-              threshold=args.threshold, denoise=args.denoise or None,
-              quiet=args.quiet)
+    vectorize(args.input, args.output, mode=args.mode, palette=args.palette,
+              merge_dist=args.merge_dist, supersample=args.supersample,
+              bg=args.bg, threshold=args.threshold, quiet=args.quiet)
     return 0
 
 

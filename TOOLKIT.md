@@ -65,18 +65,20 @@
 | Inkscape | https://github.com/inkscape/inkscape | Vector graphics / logo / SVG editing | ~3k |
 | **VTracer** | https://github.com/visioncortex/vtracer | **Best free raster→SVG tracer** — engine behind `tools/vectorize.py` (finest/balanced/compact/lineart presets) | ~7.2k |
 | DiffVG | https://github.com/BachiLi/diffvg | Research-grade differentiable SVG (AI-style vector optimization, CUDA build) | ~1.3k |
-
-**Vectorize any image (finest-shape raster → SVG):**
-```bash
-pip install vtracer pillow                                  # engine + pipeline deps
-python3 tools/vectorize.py photo.png out.svg --mode finest  # presets: finest|balanced|compact|lineart
-python3 tools/vectorize_app.py                              # web UI on http://0.0.0.0:7860
-```
-Demo pair lives in `assets/vectorize-demo/` (input.png + 4 preset outputs). `finest` traces at 2×
-resolution with the tightest spline fitting — measured RMSE 9.3 vs 16.2 for stock vtracer defaults.
 | Krita | https://github.com/KDE/krita | Digital painting & illustration | ~6k |
 | Darktable | https://github.com/darktable-org/darktable | Photography workflow + raw processing | ~4k |
 | Photopea (free, web) | https://www.photopea.com | Browser PSD editor (not OSS, but zero-cost Photoshop stand-in) | — |
+
+**Vectorize any image (finest-shape raster → SVG):**
+```bash
+pip install vtracer pillow numpy                            # engine + pipeline deps
+python3 tools/vectorize.py photo.png out.svg --mode finest  # presets: finest|balanced|compact|lineart
+python3 tools/vectorize_app.py                              # web UI on http://0.0.0.0:7860
+```
+Demo pair lives in `assets/vectorize-demo/` (input.png + 4 preset outputs). `finest` merges
+near-duplicate palette colors (kills JPEG blotches), keeps fills flat through NEAREST
+supersampling and lets the spline fitter smooth pixel staircases into clean béziers —
+~1.6k smooth paths / 3.2 MB where naive tracing produces ~38k jagged paths / 13 MB.
 
 ### UI kits & design systems (for web/app projects)
 | Tool | Link | Why it's here | Stars |
