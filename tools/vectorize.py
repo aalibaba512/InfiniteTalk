@@ -194,14 +194,17 @@ _PATH_RE = re.compile(r'<path\s+d="([^"]+)"\s+fill="(#[0-9a-fA-F]+)"'
 _NUM_RE = re.compile(r'[MCZ]|-?\d+(?:\.\d+)?')
 
 
-def _clamp_paths(body: str, w2: int, h2: int) -> str:
-    """Clip every path's geometry to the canvas.
+def _clip_and_bake(body: str, w2: int, h2: int, scale: float) -> str:
+    """Clip every path to the canvas and bake translate+scale into coordinates.
 
-    High corner thresholds make splines overshoot the canvas (the background
-    layer becomes a giant blob; edge shapes bulge past the border). Browsers
-    hide that by clipping to the viewBox, but Photoshop/Illustrator previews
-    show overflow. So we clamp coordinates numerically and replace the
-    full-canvas background layer with a plain <rect>.
+    Two compatibility fixes at once:
+      * High corner thresholds make splines overshoot the canvas; browsers hide
+        that by clipping to the viewBox but Photoshop/Illustrator previews show
+        the overflow. So all coordinates are clamped to the traced canvas and
+        the full-canvas background layer becomes a plain <rect>.
+      * The sub-pixel scale and per-path translates are multiplied straight
+        into the numbers, so the output contains NO transform attributes or
+        wrapper groups at all — every viewer renders it identically.
     """
     def fix(m: re.Match) -> str:
         d, fill, txs, tys = m.group(1), m.group(2), m.group(3), m.group(4)
@@ -220,35 +223,34 @@ def _clamp_paths(body: str, w2: int, h2: int) -> str:
                 continue
             v = float(t)
             if n % 2 == 0:  # x coordinate
-                v = min(max(v, lo_x), hi_x)
-                minx, maxx = min(minx, v + tx), max(maxx, v + tx)
+                v = min(max(v, lo_x), hi_x) + tx
+                minx, maxx = min(minx, v), max(maxx, v)
             else:           # y coordinate
-                v = min(max(v, lo_y), hi_y)
-                miny, maxy = min(miny, v + ty), max(maxy, v + ty)
-            res.append(f"{v:g}")
+                v = min(max(v, lo_y), hi_y) + ty
+                miny, maxy = min(miny, v), max(maxy, v)
+            b = v * scale
+            res.append(f"{b:.2f}".rstrip("0").rstrip(".") or "0")
             n += 1
         # full-canvas layer → plain rect (its spline corners overshoot wildly)
         if minx <= 1 and miny <= 1 and maxx >= w2 - 1 and maxy >= h2 - 1:
-            return f'<rect x="0" y="0" width="{w2}" height="{h2}" fill="{fill}"/>'
-        tr = f' transform="translate({txs},{tys})"' if txs else ''
-        return f'<path d="{" ".join(res)}" fill="{fill}"{tr}/>'
+            return (f'<rect x="0" y="0" width="{w2 * scale:g}" '
+                    f'height="{h2 * scale:g}" fill="{fill}"/>')
+        return f'<path d="{" ".join(res)}" fill="{fill}"/>'
 
     return _PATH_RE.sub(fix, body)
 
 
 def _finish_svg(raw: str, width: int, height: int, scale: float,
                 meta: str) -> str:
-    """Strip vtracer's prologue, clip geometry, normalize header."""
+    """Strip vtracer's prologue, clip + bake geometry, normalize header."""
     raw = re.sub(r"<\?xml[^>]*\?>\s*", "", raw)
     raw = re.sub(r"<!--.*?-->\s*", "", raw, flags=re.S)
     body = re.sub(r"<svg[^>]*>", "", raw, count=1).replace("</svg>", "")
-    w2, h2 = round(width / scale) if scale else width, round(height / scale) if scale else height
-    body = _clamp_paths(body, w2, h2)
+    w2, h2 = round(width / scale), round(height / scale)
+    body = _clip_and_bake(body, w2, h2, scale)
     head = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
             f'height="{height}" viewBox="0 0 {width} {height}" '
             f'overflow="hidden">')
-    if scale != 1:
-        body = f'<g transform="scale({scale:g})">{body}</g>'
     return f'{head}\n<!-- {meta} -->\n{body}</svg>\n'
 
 
