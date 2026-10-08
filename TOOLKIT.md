@@ -46,6 +46,20 @@
 | autoclip | https://github.com/zhouxiaoka/autoclip | AI highlight extraction & clipping from long videos | ~8.8k |
 | OpenCreator | https://github.com/krillinai/OpenCreator | All-in-one AI creator workspace (video, voice, avatars, translation) | ~12k |
 
+### AI Video Generation, Camera Control & Drone Walk-In / Fly-Through Shots
+| Tool | Link | Why it's here | Stars |
+|---|---|---|---|
+| Wan 2.2 | https://github.com/Wan-Video/Wan2.2 | Open large-scale video generative models (T2V, I2V, FLF2V) — top choice for exterior→interior drone walk-in shots | ~17.8k |
+| Wan 2.1 | https://github.com/Wan-Video/Wan2.1 | Foundation video suite including `Wan2.1-FLF2V-14B-720P` (wired into `wan/first_last_frame2video.py`) | ~17.1k |
+| Wan2GP | https://github.com/deepbeepmeep/Wan2GP | Low-VRAM runner supporting Wan 2.1/2.2 FLF2V keyframe chaining, LTX-2, HunyuanVideo & InfiniteTalk | ~10.2k |
+| LTX-2 | https://github.com/Lightricks/LTX-2 | Fast DiT audio-video generator with multi-keyframe conditioning & camera-control LoRAs (dolly-in, drone push) | ~9.6k |
+| VACE | https://github.com/ali-vilab/VACE | All-in-One Video Creation & Editing (depth, motion & frame-to-frame transition control; matches `wan/vace.py`) | ~4.0k |
+| HunyuanVideo-1.5 | https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5 | Lightweight I2V/T2V model with strong architectural structure preservation on forward camera motion | ~4.6k |
+| SkyReels-V2 | https://github.com/SkyworkAI/SkyReels-V2 | Infinite-length film generative model for continuous single-take camera trajectories | ~7.6k |
+| CameraCtrl | https://github.com/hehao13/CameraCtrl | Explicit 6-DoF 3D camera trajectory control (forward dolly, pitch, FPV drone paths) | ~665 |
+| 3D Gaussian Splatting | https://github.com/graphdeco-inria/gaussian-splatting | Real-time 3D radiance field rendering for photorealistic free-viewpoint drone fly-throughs | ~24.1k |
+| Nerfstudio | https://github.com/nerfstudio-project/nerfstudio | Interactive browser spline camera-path designer & renderer for 3DGS/NeRF drone walk-in shots | ~12.1k |
+
 ### Meta lists (more options)
 - Awesome Video Production — https://github.com/ad-si/awesome-video-production
 - Awesome Video — https://github.com/sitkevij/awesome-video

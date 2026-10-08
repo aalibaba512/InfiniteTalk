@@ -17,6 +17,7 @@ reuse across projects.
 - **Cut / trim / encode video** → `ffmpeg` (anything), `lossless-cut` (lossless trims), `handbrake` (batch transcode)
 - **Automate edits in code** → `moviepy` (Python), `remotion` (React templating), `editly` (declarative CLI), `auto-editor` (silence removal), `pyscenedetect` (scene cuts)
 - **AI video / talking-head extras** → `liveportrait`, `autoclip`, `opencreator`, `backgroundremover`
+- **Drone walk-in / camera-controlled AI video & 3D fly-throughs** → `wan2.2` / `wan2.1` (FLF2V first-last-frame interpolation), `wan2gp` (low-VRAM multi-keyframe chaining), `ltx-2` (camera-control LoRAs), `vace`, `hunyuanvideo-1.5`, `skyreels-v2`, `cameractrl` (6-DoF camera trajectory), `gaussian-splatting` + `nerfstudio` (3D spline fly-through), plus local `tools/drone_walkin.py`
 - **Design assets & UI** → `penpot` (Figma alt), `excalidraw` (mockups), `gimp`/`inkscape`/`krita`, `ui-shadcn` + `bulma` (web UI)
 - **Publish & grow (digital media strategy)** → `postiz` (scheduling hub), `ghost`/`listmonk` (content/email), `plausible`/`umami`/`matomo` (analytics), `mautic` (automation), `twenty` (CRM), `n8n` (glue)
 - **Strategy frameworks with AI agents** → `latticework`, `marketingskills`

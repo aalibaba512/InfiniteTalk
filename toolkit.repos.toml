@@ -15,7 +15,7 @@ updated = "2026-09-23"
 source_doc = "TOOLKIT.md"
 clone_dir = ".toolkit"
 
-# ---------------------------------------------------------------- video (22)
+# ---------------------------------------------------------------- video (32)
 
 [[repo]]
 name = "ffmpeg"
@@ -192,6 +192,86 @@ url = "https://github.com/sitkevij/awesome-video"
 tags = ["awesome", "meta"]
 use = "Curated list of video frameworks, libraries, specs — overflow directory."
 license = "List"
+
+[[repo]]
+name = "wan2.2"
+category = "video"
+url = "https://github.com/Wan-Video/Wan2.2"
+tags = ["core", "ai", "i2v", "flf2v", "drone-shot"]
+use = "Open large-scale video generative models (T2V, I2V, FLF2V) — top choice for exterior-to-interior drone walk-in shots."
+license = "Apache-2.0"
+
+[[repo]]
+name = "wan2.1"
+category = "video"
+url = "https://github.com/Wan-Video/Wan2.1"
+tags = ["ai", "i2v", "flf2v", "drone-shot", "synergy-with-infinitetalk"]
+use = "Wan 2.1 foundation video suite including First-Last-Frame-to-Video (FLF2V-14B-720P) wired into `wan/first_last_frame2video.py`."
+license = "Apache-2.0"
+
+[[repo]]
+name = "wan2gp"
+category = "video"
+url = "https://github.com/deepbeepmeep/Wan2GP"
+tags = ["ai", "low-vram", "flf2v", "drone-shot", "synergy-with-infinitetalk"]
+use = "Low-VRAM multi-keyframe video generator supporting Wan 2.1/2.2 FLF2V, LTX-2, HunyuanVideo, and InfiniteTalk."
+license = "Apache-2.0"
+
+[[repo]]
+name = "ltx-2"
+category = "video"
+url = "https://github.com/Lightricks/LTX-2"
+tags = ["ai", "i2v", "camera-control", "drone-shot"]
+use = "Fast DiT audio-video generative model with multi-keyframe conditioning and explicit camera-control LoRAs (dolly-in, drone push)."
+license = "Openrail / Apache-2.0 (check repo)"
+
+[[repo]]
+name = "vace"
+category = "video"
+url = "https://github.com/ali-vilab/VACE"
+tags = ["ai", "video-editing", "camera-control", "drone-shot"]
+use = "All-in-One Video Creation and Editing (depth, motion, and frame-to-frame transition control; matches `wan/vace.py`)."
+license = "Apache-2.0"
+
+[[repo]]
+name = "hunyuanvideo-1.5"
+category = "video"
+url = "https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5"
+tags = ["ai", "i2v", "drone-shot"]
+use = "Lightweight high-fidelity I2V/T2V model with strong architectural geometry preservation on forward camera motion."
+license = "Tencent Hunyuan Community License"
+
+[[repo]]
+name = "skyreels-v2"
+category = "video"
+url = "https://github.com/SkyworkAI/SkyReels-V2"
+tags = ["ai", "long-video", "drone-shot"]
+use = "Infinite-length film generative model for continuous single-take camera trajectories and shot extension."
+license = "Apache-2.0"
+
+[[repo]]
+name = "cameractrl"
+category = "video"
+url = "https://github.com/hehao13/CameraCtrl"
+tags = ["ai", "camera-control", "3d-trajectory", "drone-shot"]
+use = "Explicit 6-DoF camera trajectory control (extrinsic matrices for forward dolly, pitch, FPV drone paths) in video diffusion."
+license = "Apache-2.0"
+
+[[repo]]
+name = "gaussian-splatting"
+category = "video"
+url = "https://github.com/graphdeco-inria/gaussian-splatting"
+tags = ["3d", "3dgs", "radiance-field", "drone-shot"]
+use = "3D Gaussian Splatting for real-time photorealistic 3D scene reconstruction and free-viewpoint drone fly-through rendering."
+license = "Inria / non-commercial research (check repo)"
+
+[[repo]]
+name = "nerfstudio"
+category = "video"
+url = "https://github.com/nerfstudio-project/nerfstudio"
+tags = ["3d", "nerf", "3dgs", "camera-path", "drone-shot"]
+use = "Modular 3DGS/NeRF studio with an interactive browser spline editor to design and render smooth drone walk-in camera paths."
+license = "Apache-2.0"
 
 # --------------------------------------------------------------- design (12)
 
