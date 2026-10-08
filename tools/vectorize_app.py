@@ -80,9 +80,9 @@ patched pipeline: supersampling + tuned spline fitting</span></header>
 <div class="pane" id="p-orig"><h2>Original (raster)</h2><div class="stage"><img id="orig"></div></div>
 <div class="pane" id="p-vec"><h2>Vectorized (SVG)</h2><div class="stage"><img id="vec"></div></div>
 </div>
-<footer>tools/vectorize.py — InfiniteTalk toolkit · presets:
-finest (smooth béziers, merged palette, 2× trace) · balanced (native res) ·
-compact (posterized) · lineart (B&amp;W)</footer>
+<footer>tools/vectorize.py — InfiniteTalk toolkit · engine: vtracer 1.0 WASM
+(seam-free cutout + curve simplification) · presets: finest · balanced ·
+compact · lineart</footer>
 <script>
 const MODES = __MODES__;
 const $=id=>document.getElementById(id);

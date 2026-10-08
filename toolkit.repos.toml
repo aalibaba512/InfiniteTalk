@@ -240,7 +240,7 @@ name = "vtracer"
 category = "design"
 url = "https://github.com/visioncortex/vtracer"
 tags = ["core", "vectorize", "raster-to-svg", "python"]
-use = "Best free raster→SVG tracer (MIT). Engine behind tools/vectorize.py; install via `pip install vtracer`. Presets tuned for finest-shape output (see tools/vectorize.py)."
+use = "Best free raster→SVG tracer (MIT). Engine behind tools/vectorize.py — use the 1.0 WASM build via `npm install @visioncortex/vtracer` (simplify + cutout = smooth beziers); `pip install vtracer` is the 0.6 fallback."
 license = "MIT"
 
 [[repo]]

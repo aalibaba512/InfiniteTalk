@@ -51,16 +51,20 @@ As a library
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
 try:
-    import vtracer
+    import vtracer  # 0.6 fallback engine (pip)
 except ImportError:  # pragma: no cover
-    sys.exit("vtracer is required:  pip install vtracer   (and pillow/numpy for the pipeline)")
+    vtracer = None  # the 1.0 WASM engine (node) can still be used
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -77,45 +81,56 @@ from PIL import Image, ImageFilter
 #   length_threshold  spline fitting tolerance in px
 #   splice_threshold  min angle (deg) between joined spline segments
 
+# Each preset: `pre` = raster cleanup, `supersample`, `wasm` = options for the
+# vtracer 1.0 WASM engine (preferred), `trace` = fallback for the old 0.6 PyPI
+# engine when node/WASM isn't available.
 MODES = {
     "finest": dict(
+        quant=64, merge_dist=28, median=3, supersample=2,
+        wasm=dict(hierarchical="cutout", mode="spline", simplify=2,
+                  filterSpeckle=8, maxColors=32, pathPrecision=2),
         trace=dict(
             colormode="color", hierarchical="stacked", mode="spline",
             filter_speckle=8, color_precision=8, layer_difference=8,
             corner_threshold=100, length_threshold=5.0, splice_threshold=60,
             path_precision=3,
         ),
-        supersample=2, quant=64, merge_dist=28, median=3,
-        help="smooth vector-art quality: merged palette + 2x flat supersample",
+        help="vtracer 1.0 WASM: watershed-smooth beziers + curve simplification, 2x",
     ),
     "balanced": dict(
+        quant=64, merge_dist=28, median=3, supersample=1,
+        wasm=dict(hierarchical="cutout", mode="spline", simplify=1.5,
+                  filterSpeckle=4, maxColors=24, pathPrecision=2),
         trace=dict(
             colormode="color", hierarchical="stacked", mode="spline",
             filter_speckle=4, color_precision=8, layer_difference=8,
             corner_threshold=100, length_threshold=5.0, splice_threshold=60,
             path_precision=3,
         ),
-        supersample=1, quant=64, merge_dist=28, median=3,
-        help="same cleanup at native resolution; smallest smooth output",
+        help="same engine at native resolution; small smooth output",
     ),
     "compact": dict(
+        quant=24, merge_dist=0, median=5, supersample=1,
+        wasm=dict(hierarchical="cutout", mode="spline", simplify=2.5,
+                  filterSpeckle=12, maxColors=16, pathPrecision=1, optimize=1),
         trace=dict(
             colormode="color", hierarchical="stacked", mode="spline",
             filter_speckle=8, color_precision=6, layer_difference=16,
             corner_threshold=120, length_threshold=6.0, splice_threshold=70,
             path_precision=2,
         ),
-        supersample=1, quant=24, merge_dist=0, median=5,
         help="posterized & tiny: few colors, aggressive simplification",
     ),
     "lineart": dict(
+        quant=0, merge_dist=0, median=0, supersample=2,
+        wasm=dict(clustering="bw", adaptive=True, mode="spline", simplify=1,
+                  filterSpeckle=4),
         trace=dict(
             colormode="binary", mode="spline",
             filter_speckle=2, corner_threshold=100, length_threshold=5.0,
             splice_threshold=60, path_precision=3,
         ),
-        supersample=2, quant=0, merge_dist=0, median=0,
-        help="black & white line art / sketches (uses --threshold)",
+        help="black & white line art / sketches (adaptive threshold)",
     ),
 }
 
@@ -240,14 +255,39 @@ def _clip_and_bake(body: str, w2: int, h2: int, scale: float) -> str:
     return _PATH_RE.sub(fix, body)
 
 
+def _wasm_engine():
+    """Locate node + the vtracer 1.0 WASM package, else None."""
+    node = shutil.which("node")
+    if not node:
+        return None
+    repo = Path(__file__).resolve().parent.parent
+    for base in (repo / ".toolkit" / "svg-render" / "node_modules",
+                 repo / "node_modules"):
+        if (base / "@visioncortex" / "vtracer").is_dir():
+            return node, base
+    return None
+
+
+def _trace_wasm(engine, inp: Path, out: Path, opts: dict):
+    node, base = engine
+    env = dict(os.environ, NODE_PATH=str(base))
+    wrapper = Path(__file__).resolve().parent / "vt_wasm.js"
+    subprocess.run([node, str(wrapper), str(inp), str(out), json.dumps(opts)],
+                   env=env, check=True, capture_output=True)
+
+
 def _finish_svg(raw: str, width: int, height: int, scale: float,
-                meta: str) -> str:
-    """Strip vtracer's prologue, clip + bake geometry, normalize header."""
+                meta: str, bake: bool = True) -> str:
+    """Normalize header. bake=True: clip + bake coords (0.6 engine output);
+    bake=False: plain scale wrapper (1.0 WASM output has no overshoot)."""
     raw = re.sub(r"<\?xml[^>]*\?>\s*", "", raw)
     raw = re.sub(r"<!--.*?-->\s*", "", raw, flags=re.S)
     body = re.sub(r"<svg[^>]*>", "", raw, count=1).replace("</svg>", "")
-    w2, h2 = round(width / scale), round(height / scale)
-    body = _clip_and_bake(body, w2, h2, scale)
+    if bake:
+        w2, h2 = round(width / scale), round(height / scale)
+        body = _clip_and_bake(body, w2, h2, scale)
+    elif scale != 1:
+        body = f'<g transform="scale({scale:g})">{body}</g>'
     head = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
             f'height="{height}" viewBox="0 0 {width} {height}" '
             f'overflow="hidden">')
@@ -277,19 +317,27 @@ def vectorize(input_path, output_path=None, *, mode: str = "finest",
     work, kept = _prepare(work, median=preset["median"], quant=quant,
                           merge_dist=md, supersample=ss, binarize=binarize)
 
+    engine = _wasm_engine()
+    if engine is None and vtracer is None:
+        sys.exit("no engine available: pip install vtracer  OR  "
+                 "npm install @visioncortex/vtracer")
+    engine_name = "vtracer-1.0-wasm" if engine else "vtracer-0.6-py"
     with tempfile.TemporaryDirectory(prefix="vectorize-") as td:
         tmp_png = Path(td) / "work.png"
         tmp_svg = Path(td) / "work.svg"
         work.save(tmp_png)
-        vtracer.convert_image_to_svg_py(str(tmp_png), str(tmp_svg),
-                                        **preset["trace"])
+        if engine:
+            _trace_wasm(engine, tmp_png, tmp_svg, preset["wasm"])
+        else:
+            vtracer.convert_image_to_svg_py(str(tmp_png), str(tmp_svg),
+                                            **preset["trace"])
         raw = tmp_svg.read_text()
 
     scale = round(1 / ss, 6) if ss > 1 else 1
     meta = (f"vectorized by InfiniteTalk tools/vectorize.py · engine: "
-            f"visioncortex/vtracer · mode={mode} supersample={ss}x "
+            f"{engine_name} · mode={mode} supersample={ss}x "
             f"colors={kept or 'n/a'}")
-    svg = _finish_svg(raw, width, height, scale, meta)
+    svg = _finish_svg(raw, width, height, scale, meta, bake=(engine is None))
 
     if output_path is None:
         output_path = input_path.with_suffix(".svg")

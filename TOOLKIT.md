@@ -71,14 +71,15 @@
 
 **Vectorize any image (finest-shape raster → SVG):**
 ```bash
-pip install vtracer pillow numpy                            # engine + pipeline deps
+pip install pillow numpy                 # pipeline deps
+npm install @visioncortex/vtracer        # 1.0 WASM engine (preferred; auto-detected)
+pip install vtracer                      # optional 0.6 fallback engine
 python3 tools/vectorize.py photo.png out.svg --mode finest  # presets: finest|balanced|compact|lineart
 python3 tools/vectorize_app.py                              # web UI on http://0.0.0.0:7860
 ```
-Demo pair lives in `assets/vectorize-demo/` (input.png + 4 preset outputs). `finest` merges
-near-duplicate palette colors (kills JPEG blotches), keeps fills flat through NEAREST
-supersampling and lets the spline fitter smooth pixel staircases into clean béziers —
-~1.6k smooth paths / 3.2 MB where naive tracing produces ~38k jagged paths / 13 MB.
+Demo pair lives in `assets/vectorize-demo/`. `finest` = merged-palette cleanup + 2× flat
+supersample into the **vtracer 1.0 WASM engine** (seam-free cutout + curve simplification):
+~1.4k smooth paths / 456 KB where the old PyPI engine's naive tracing gave 38k jagged / 13 MB.
 
 ### UI kits & design systems (for web/app projects)
 | Tool | Link | Why it's here | Stars |
